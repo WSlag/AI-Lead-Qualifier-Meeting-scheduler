@@ -1,0 +1,431 @@
+{
+  "name": "AI Lead Qualification & Meeting Booker",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-lead",
+      "name": "Lead Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1984, -64],
+      "webhookId": "webhook-lead"
+    },
+    {
+      "parameters": {
+        "jsCode": "const { name, email, company, message } = $input.item.json;\n\nconst errors = {};\nif (!name || String(name).trim() === '') errors.name = 'name is required.';\nif (!email || String(email).trim() === '') errors.email = 'email is required.';\nelse if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(String(email).trim())) errors.email = 'email is not valid.';\nif (!message || String(message).trim() === '') errors.message = 'message is required.';\n\nif (Object.keys(errors).length > 0) {\n  throw new Error(JSON.stringify({ code: 400, errors }));\n}\n\nreturn { json: {\n  name: String(name).trim(),\n  email: String(email).trim(),\n  company: company ? String(company).trim() : '',\n  message: String(message).trim(),\n  source: 'WEB_FORM'\n} };"
+      },
+      "id": "code-validate",
+      "name": "Validate Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1728, -64]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.deepseek.com/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$credentials.value}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"model\": \"deepseek-chat\",\n  \"response_format\": { \"type\": \"json_object\" },\n  \"messages\": [\n    { \"role\": \"system\", \"content\": \"You are a sales lead qualification assistant. Analyze the supplied lead information and return ONLY valid JSON. Score the lead from 0 to 100 based on apparent business need, relevance, buying intent, and clarity of the request. Priority: HIGH (80-100), MEDIUM (50-79), LOW (0-49). Do not invent facts not present in the lead. Response must be JSON with keys: score, priority, intent, summary, recommendedAction.\" },\n    { \"role\": \"user\", \"content\": \"Lead: name={{ $json.name }}, email={{ $json.email }}, company={{ $json.company }}, message={{ $json.message }}\" }\n  ]\n}",
+        "options": {}
+      },
+      "id": "http-deepseek",
+      "name": "DeepSeek Qualification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-1504, -64]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.item.json;\nconst content = raw?.choices?.[0]?.message?.content;\nif (!content) throw new Error('DeepSeek returned no content.');\nconst ai = JSON.parse(content);\n\nconst validPriority = ['LOW', 'MEDIUM', 'HIGH'];\nconst score = Number(ai.score);\nlet priority = String(ai.priority || '').toUpperCase();\nif (!validPriority.includes(priority)) {\n  priority = score >= 80 ? 'HIGH' : score >= 50 ? 'MEDIUM' : 'LOW';\n}\nif (score < 0 || score > 100) throw new Error('Invalid score from DeepSeek.');\n\nreturn { json: {\n  lead: raw.body || raw,\n  ai: {\n    score,\n    priority,\n    intent: String(ai.intent || ''),\n    summary: String(ai.summary || ''),\n    recommendedAction: String(ai.recommendedAction || '')\n  }\n} };"
+      },
+      "id": "code-parse",
+      "name": "Parse DeepSeek JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1280, -64]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "resource": "document",
+        "collection": "leads",
+        "data": {
+          "name": "={{ $json.lead.name }}",
+          "email": "={{ $json.lead.email }}",
+          "company": "={{ $json.lead.company }}",
+          "message": "={{ $json.lead.message }}",
+          "score": "={{ $json.ai.score }}",
+          "priority": "={{ $json.ai.priority }}",
+          "intent": "={{ $json.ai.intent }}",
+          "summary": "={{ $json.ai.summary }}",
+          "recommendedAction": "={{ $json.ai.recommendedAction }}",
+          "status": "NEW",
+          "source": "={{ $json.lead.source }}",
+          "activityLogged": false,
+          "calendarEventCreated": false,
+          "meetingStatus": "NONE",
+          "createdAt": "={{ $now.toISOString() }}",
+          "updatedAt": "={{ $now.toISOString() }}"
+        },
+        "options": {}
+      },
+      "id": "firestore-create",
+      "name": "Save Lead to Firestore",
+      "type": "n8n-nodes-base.firebase",
+      "typeVersion": 2.1,
+      "position": [-1072, -64]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Parse DeepSeek JSON').item.json.ai.score ?? 0 }}",
+              "rightValue": 80,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              },
+              "id": "condition-high"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-high-priority",
+      "name": "Score >= 80?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-848, -64]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.APPS_SCRIPT_URL }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$credentials.value}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"action\": \"QUALIFY_AND_SCHEDULE\",\n  \"leadId\": \"={{ $json.id }}\",\n  \"name\": \"={{ $('Parse DeepSeek JSON').item.json.lead.name }}\",\n  \"email\": \"={{ $('Parse DeepSeek JSON').item.json.lead.email }}\",\n  \"company\": \"={{ $('Parse DeepSeek JSON').item.json.lead.company }}\",\n  \"score\": \"={{ $('Parse DeepSeek JSON').item.json.ai.score }}\",\n  \"priority\": \"={{ $('Parse DeepSeek JSON').item.json.ai.priority }}\",\n  \"intent\": \"={{ $('Parse DeepSeek JSON').item.json.ai.intent }}\",\n  \"summary\": \"={{ $('Parse DeepSeek JSON').item.json.ai.summary }}\",\n  \"recommendedAction\": \"={{ $('Parse DeepSeek JSON').item.json.ai.recommendedAction }}\",\n  \"source\": \"={{ $('Parse DeepSeek JSON').item.json.lead.source }}\",\n  \"meetingStart\": \"={{ $env.DEFAULT_MEETING_START }}\",\n  \"meetingDurationMinutes\": 30\n}",
+        "options": {}
+      },
+      "id": "http-apps-script-schedule",
+      "name": "Apps Script Schedule + Log",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-624, 80]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.APPS_SCRIPT_URL }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$credentials.value}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"action\": \"QUALIFY_AND_SCHEDULE\",\n  \"leadId\": \"={{ $json.id }}\",\n  \"name\": \"={{ $json.name }}\",\n  \"email\": \"={{ $json.email }}\",\n  \"company\": \"={{ $json.company }}\",\n  \"score\": \"={{ $json.score }}\",\n  \"priority\": \"={{ $json.priority }}\",\n  \"intent\": \"={{ $json.intent }}\",\n  \"summary\": \"={{ $json.summary }}\",\n  \"recommendedAction\": \"={{ $json.recommendedAction }}\",\n  \"source\": \"={{ $json.source }}\",\n  \"meetingStart\": \"={{ $json.meetingStart }}\",\n  \"meetingDurationMinutes\": 30\n}",
+        "options": {}
+      },
+      "id": "http-apps-script-schedule-manual",
+      "name": "Apps Script Schedule + Log (Manual)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-400, 560]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.APPS_SCRIPT_URL }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$credentials.value}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"action\": \"LOG_ACTIVITY\",\n  \"leadId\": \"={{ $('Save Lead to Firestore').item.json.id }}\",\n  \"name\": \"={{ $('Parse DeepSeek JSON').item.json.lead.name }}\",\n  \"email\": \"={{ $('Parse DeepSeek JSON').item.json.lead.email }}\",\n  \"company\": \"={{ $('Parse DeepSeek JSON').item.json.lead.company }}\",\n  \"score\": \"={{ $('Parse DeepSeek JSON').item.json.ai.score }}\",\n  \"priority\": \"={{ $('Parse DeepSeek JSON').item.json.ai.priority }}\",\n  \"intent\": \"={{ $('Parse DeepSeek JSON').item.json.ai.intent }}\",\n  \"source\": \"={{ $('Parse DeepSeek JSON').item.json.lead.source }}\"\n}",
+        "options": {}
+      },
+      "id": "http-apps-script-log",
+      "name": "Apps Script Log Activity",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-624, -200]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "resource": "document",
+        "collection": "leads",
+        "id": "={{ $json.id }}",
+        "data": {
+          "activityLogged": "={{ $json.sheetLogged }}",
+          "calendarEventCreated": "={{ $json.calendarCreated }}",
+          "calendarEventId": "={{ $json.calendarEventId }}",
+          "calendarEventUrl": "={{ $json.calendarEventUrl }}",
+          "meetingStatus": "={{ $json.calendarCreated ? 'SCHEDULED' : 'FAILED' }}",
+          "updatedAt": "={{ $now.toISOString() }}"
+        },
+        "options": {}
+      },
+      "id": "firestore-update-scheduled",
+      "name": "Update Lead (Scheduled)",
+      "type": "n8n-nodes-base.firebase",
+      "typeVersion": 2.1,
+      "position": [-400, 144]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "resource": "document",
+        "collection": "leads",
+        "id": "={{ $('Lead Webhook (Schedule)').item.json.leadId }}",
+        "data": {
+          "activityLogged": "={{ $json.sheetLogged }}",
+          "calendarEventCreated": "={{ $json.calendarCreated }}",
+          "calendarEventId": "={{ $json.calendarEventId }}",
+          "calendarEventUrl": "={{ $json.calendarEventUrl }}",
+          "meetingStatus": "={{ $json.calendarCreated ? 'SCHEDULED' : 'FAILED' }}",
+          "updatedAt": "={{ $now.toISOString() }}"
+        },
+        "options": {}
+      },
+      "id": "firestore-update-scheduled-manual",
+      "name": "Update Lead (Scheduled Manual)",
+      "type": "n8n-nodes-base.firebase",
+      "typeVersion": 2.1,
+      "position": [-176, 560]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "resource": "document",
+        "collection": "leads",
+        "id": "={{ $('Save Lead to Firestore').item.json.id }}",
+        "data": {
+          "activityLogged": "={{ $('Apps Script Log Activity').item.json.sheetLogged }}",
+          "meetingStatus": "NOT_REQUIRED",
+          "updatedAt": "={{ $now.toISOString() }}"
+        },
+        "options": {}
+      },
+      "id": "firestore-update-logged",
+      "name": "Update Lead (Activity Logged)",
+      "type": "n8n-nodes-base.firebase",
+      "typeVersion": 2.1,
+      "position": [-400, -264]
+    },
+    {
+      "parameters": {
+        "message": {
+          "subject": "=High-Priority Lead — {{ $('Parse DeepSeek JSON').item.json.lead.name }} / {{ $('Parse DeepSeek JSON').item.json.lead.company }}",
+          "to": "={{ $env.NOTIFY_EMAIL }}",
+          "html": "=A new high-priority lead has been qualified.<br><br><b>Lead:</b> {{ $('Parse DeepSeek JSON').item.json.lead.name }}<br><b>Company:</b> {{ $('Parse DeepSeek JSON').item.json.lead.company }}<br><b>Email:</b> {{ $('Parse DeepSeek JSON').item.json.lead.email }}<br><br><b>AI Score:</b> {{ $('Parse DeepSeek JSON').item.json.ai.score }}<br><b>Priority:</b> {{ $('Parse DeepSeek JSON').item.json.ai.priority }}<br><b>Intent:</b> {{ $('Parse DeepSeek JSON').item.json.ai.intent }}<br><br><b>Recommended Action:</b> {{ $('Parse DeepSeek JSON').item.json.ai.recommendedAction }}<br><br><b>Calendar:</b> <a href=\"{{ $('Apps Script Schedule + Log').item.json.calendarEventUrl }}\">Open Calendar Event</a>"
+        },
+        "options": {}
+      },
+      "id": "gmail-notify",
+      "name": "Gmail Notification",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [-176, 144]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "schedule",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-schedule",
+      "name": "Lead Webhook (Schedule)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1984, 560],
+      "webhookId": "webhook-schedule"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Lead Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Lead": {
+      "main": [
+        [
+          {
+            "node": "DeepSeek Qualification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DeepSeek Qualification": {
+      "main": [
+        [
+          {
+            "node": "Parse DeepSeek JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse DeepSeek JSON": {
+      "main": [
+        [
+          {
+            "node": "Save Lead to Firestore",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Lead to Firestore": {
+      "main": [
+        [
+          {
+            "node": "Score >= 80?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score >= 80?": {
+      "main": [
+        [
+          {
+            "node": "Apps Script Log Activity",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Apps Script Schedule + Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apps Script Schedule + Log": {
+      "main": [
+        [
+          {
+            "node": "Update Lead (Scheduled)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apps Script Log Activity": {
+      "main": [
+        [
+          {
+            "node": "Update Lead (Activity Logged)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead (Scheduled)": {
+      "main": [
+        [
+          {
+            "node": "Gmail Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Webhook (Schedule)": {
+      "main": [
+        [
+          {
+            "node": "Apps Script Schedule + Log (Manual)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apps Script Schedule + Log (Manual)": {
+      "main": [
+        [
+          {
+            "node": "Update Lead (Scheduled Manual)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

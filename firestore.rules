@@ -1,0 +1,16 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Dashboard reads are public for the demo.
+    // All writes are performed by n8n using the Admin SDK (service account),
+    // which bypasses these rules. The browser can only read.
+    match /leads/{leadId} {
+      allow read: if true;
+      allow create, update, delete: if false;
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
