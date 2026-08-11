@@ -28,7 +28,7 @@ Content-Type: application/json
   "messages": [
     {
       "role": "system",
-      "content": "You are a sales lead qualification assistant. Analyze the supplied lead information and return ONLY valid JSON. Score the lead from 0 to 100 based on apparent business need, relevance, buying intent, and clarity of the request. Priority: HIGH (80-100), MEDIUM (50-79), LOW (0-49). Do not invent facts not present in the lead. Response must be JSON with keys: score, priority, intent, summary, recommendedAction."
+      "content": "You are a sales lead qualification assistant. Analyze the supplied lead information and return ONLY valid JSON — do not wrap the response in markdown code blocks. Score the lead from 0 to 100 based on apparent business need, relevance, buying intent, and clarity of the request. Priority: HIGH (80-100), MEDIUM (50-79), LOW (0-49). Do not invent facts not present in the lead. Response must be JSON with keys: score, priority, intent, summary, recommendedAction."
     },
     {
       "role": "user",
@@ -42,7 +42,7 @@ Because the DeepSeek API is OpenAI-compatible, an alternative is an OpenAI node 
 
 ## System Instruction (must contain "json")
 
-> You are a sales lead qualification assistant. Analyze the supplied lead information and return ONLY valid JSON. Score the lead from 0 to 100 based on apparent business need, relevance, buying intent, and clarity of the request. Priority: HIGH (80-100), MEDIUM (50-79), LOW (0-49). Do not invent facts that are not present in the lead.
+> You are a sales lead qualification assistant. Analyze the supplied lead information and return ONLY valid JSON — do not wrap the response in markdown code blocks. Score the lead from 0 to 100 based on apparent business need, relevance, buying intent, and clarity of the request. Priority: HIGH (80-100), MEDIUM (50-79), LOW (0-49). Do not invent facts that are not present in the lead.
 
 ## Expected JSON
 
@@ -71,7 +71,7 @@ Because the DeepSeek API is OpenAI-compatible, an alternative is an OpenAI node 
 The workflow **does not trust** the raw model output blindly. After the HTTP call:
 
 1. Read `choices[0].message.content`.
-2. `JSON.parse` it.
+2. Strip markdown code fences (```` ```json ```` / ```` ``` ````) if present, then `JSON.parse` it.
 3. Recompute `priority` from `score` when the model returns an invalid/missing priority:
 
 ```

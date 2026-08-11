@@ -106,6 +106,7 @@ The node returns `{ valid: false, errors: {...} }` on failure or `{ valid: true,
 ## 4. Parse Response (Code node)
 
 - Read `choices[0].message.content`
+- Strip markdown code fences (```` ```json ```` / ```` ``` ````) if the model wraps the JSON
 - `JSON.parse`
 - Normalize priority from score if invalid
 - Validate `score` within 0–100
