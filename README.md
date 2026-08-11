@@ -58,7 +58,7 @@ Lead Form → n8n → DeepSeek → Firestore → Mini CRM Dashboard
 │   ├── PORTFOLIO_DEMO.md   Demo + interview script
 │   └── DEVELOPMENT_TOOLING.md  Skills & MCPs used during development
 ├── google-apps-script/
-│   ├── Code.gs             Apps Script Web App
+│   ├── Code.js             Apps Script Web App
 │   └── appsscript.json
 ├── n8n/
 │   └── workflow.lead-qualifier.json   n8n workflow import

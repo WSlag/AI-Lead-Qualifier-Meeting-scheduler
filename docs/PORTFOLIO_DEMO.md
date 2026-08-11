@@ -25,7 +25,8 @@
 - Validation runs before any AI processing.
 - AI output is structured JSON (`json_object`) and normalized defensively in a Code node.
 - Apps Script is the Google Workspace gate — a shared secret protects the Web App.
-- Firestore rules allow read-only client access; all writes are server-side (n8n).
+- Firestore rules allow clients to read, plus patch only the lead `status` field; all other writes are server-side (n8n).
+- Gmail only fires after a confirmed Calendar event (`calendarCreated: true`), so an email never claims a meeting that wasn't booked.
 - Google Sheets is an activity log — **not** a second database.
 - Failures are handled independently (Calendar, Sheets, Gmail each logged separately).
 

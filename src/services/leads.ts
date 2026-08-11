@@ -39,6 +39,7 @@ function toLead(id: string, data: DocumentData): Lead {
     summary: String(data.summary ?? ""),
     recommendedAction: String(data.recommendedAction ?? ""),
     status: isLeadStatus(status) ? (status as LeadStatus) : "NEW",
+    source: data.source ? String(data.source) : undefined,
     createdAt: asDate(data, "createdAt"),
     updatedAt: asDate(data, "updatedAt"),
     activityLogged: Boolean(data.activityLogged),

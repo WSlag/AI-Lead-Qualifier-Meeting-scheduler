@@ -23,7 +23,7 @@ Timestamp | Lead ID | Name | Email | Company | Score | Priority | Intent | Statu
 
 1. Go to https://script.google.com and create a **New project**.
 2. Name it `Project Demo — Workspace Integration`.
-3. In the editor, replace `Code.gs` with the contents of `google-apps-script/Code.gs` from this repo.
+3. In the editor, replace `Code.js` with the contents of `google-apps-script/Code.js` from this repo.
 
 ## 3. Configure Script Properties
 
@@ -34,7 +34,7 @@ The secret and spreadsheet ID must **not** be in the source code.
 
 | Key | Value |
 | --- | --- |
-| `WEBHOOK_SECRET` | a long random string (the shared secret n8n will send as `Authorization: Bearer <secret>`) |
+| `WEBHOOK_SECRET` | a long random string (the shared secret n8n sends in the JSON body; Apps Script web apps cannot read HTTP headers) |
 | `SPREADSHEET_ID` | the Spreadsheet ID from step 1 |
 
 3. Generate the secret with:
@@ -73,16 +73,16 @@ No separate console setup is needed for `CalendarApp.getDefaultCalendar()` — t
 ## 8. Configure n8n
 
 1. Set n8n environment `APPS_SCRIPT_URL` to the `/exec` URL.
-2. Set the n8n Header Auth credential for Apps Script to `Bearer <WEBHOOK_SECRET>` (same secret as step 3).
+2. Create an n8n **HTTP Header Auth** credential for Apps Script whose **value** is the `WEBHOOK_SECRET` (same secret as step 3), and attach it to the three Apps Script HTTP Request nodes. The workflow also sends this secret as `"secret"` in the JSON body — Apps Script web apps cannot read HTTP request headers, so that body field (or a `?secret=` query parameter) is what the Web App actually validates. The n8n credential provides the value via `{{ $credentials.value }}`.
 
 ## 9. Test with a POST Request
 
 ```bash
 curl -X POST "<APPS_SCRIPT_URL>" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <WEBHOOK_SECRET>" \
   -d '{
     "action": "LOG_ACTIVITY",
+    "secret": "<WEBHOOK_SECRET>",
     "leadId": "test-lead",
     "name": "Sarah Lee",
     "email": "sarah@example.com",
@@ -112,9 +112,9 @@ Check that a row was appended to the sheet.
 ```bash
 curl -X POST "<APPS_SCRIPT_URL>" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <WEBHOOK_SECRET>" \
   -d '{
     "action": "QUALIFY_AND_SCHEDULE",
+    "secret": "<WEBHOOK_SECRET>",
     "leadId": "test-lead-2",
     "name": "John Smith",
     "email": "john@example.com",
@@ -151,6 +151,7 @@ Expected response:
 ```json
 {
   "action": "LOG_ACTIVITY" | "QUALIFY_AND_SCHEDULE",
+  "secret": "...",
   "leadId": "...",
   "name": "...",
   "email": "...",
@@ -200,7 +201,7 @@ The Web App always returns pure JSON — never HTML.
 
 | Symptom | Likely cause / fix |
 | --- | --- |
-| `401` / `Unauthorized` | Wrong `Authorization` header or `WEBHOOK_SECRET` mismatch |
+| `401` / `Unauthorized` | Wrong `secret` in the body (or `?secret=`) vs `WEBHOOK_SECRET` mismatch. Apps Script cannot read HTTP headers, so the secret must be in the JSON body or query parameter. |
 | `400` / invalid body | Ensure valid JSON and required fields (`name`, `email`, `score`, `priority`; `meetingStart` when scheduling) |
 | No sheet row | `SPREADSHEET_ID` wrong, or share the sheet with the script's account |
 | No calendar event | Calendar scopes not authorized, or `meetingStart` missing/invalid |

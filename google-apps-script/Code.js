@@ -1,9 +1,11 @@
-﻿/**
- * Project Demo â€” Google Apps Script integration
+/**
+ * Project Demo - Google Apps Script integration
  *
  * Exposes a Web App endpoint consumed by the n8n workflow.
  * Responsibilities:
- *   - Validate an Authorization: Bearer <secret> header (Script Property WEBHOOK_SECRET)
+ *   - Validate the shared secret (Script Property WEBHOOK_SECRET). Apps Script
+ *     web apps cannot read HTTP request headers, so the secret is accepted from
+ *     the JSON body ("secret") or a "?secret=" query parameter.
  *   - action "LOG_ACTIVITY":          log a lead row to Google Sheets
  *   - action "QUALIFY_AND_SCHEDULE":  log a lead row + create a Google Calendar event
  *
@@ -19,7 +21,7 @@ var PROP_SPREADSHEET_ID = "SPREADSHEET_ID";
  * opened in a browser without errors.
  */
 function doGet() {
-  return respond_({ success: false, error: "Use POST with a valid bearer token." });
+  return respond_({ success: false, error: "Use POST with a valid secret." });
 }
 
 /**
@@ -31,13 +33,13 @@ function doPost(e) {
       return respond_({ success: false, error: "Missing body." });
     }
 
-    if (!authorized_(e)) {
-      return respond_({ success: false, error: "Unauthorized." });
-    }
-
     var payload = parseJsonSafe_(e.postData.contents);
     if (!payload) {
       return respond_({ success: false, error: "Invalid JSON payload." });
+    }
+
+    if (!authorized_(e, payload)) {
+      return respond_({ success: false, error: "Unauthorized." });
     }
 
     var validation = validatePayload_(payload);
@@ -99,17 +101,26 @@ function doPost(e) {
 }
 
 /**
- * Returns true when the Authorization header matches the configured shared secret.
+ * Returns true when the supplied secret matches the configured Script Property.
+ * Apps Script web apps cannot read HTTP request headers, so the secret comes from
+ * the JSON body ("secret") or the "?secret=" query parameter. A header attempt is
+ * kept for compatibility but will not work for header-only requests.
  */
-function authorized_(e) {
+function authorized_(e, payload) {
   var expected = PropertiesService.getScriptProperties().getProperty(PROP_SECRET);
   if (!expected) return false;
-  var auth = (e.parameter && e.parameter.Authorization) || (e.parameter && e.parameter.authorization);
-  var headers = (e.postData && e.postData.headers) || {};
-  auth = auth || headers["Authorization"] || headers["authorization"];
-  if (!auth) return false;
-  var token = String(auth).replace(/^Bearer\s+/i, "").trim();
-  return token === expected;
+
+  var token = "";
+  if (payload && payload.secret) {
+    token = String(payload.secret);
+  } else if (e && e.parameter && e.parameter.secret) {
+    token = String(e.parameter.secret);
+  } else {
+    var auth = (e && e.parameter && (e.parameter.Authorization || e.parameter.authorization)) || "";
+    var m = String(auth).match(/^Bearer\s+(.+)$/i);
+    if (m) token = m[1];
+  }
+  return token.trim() === expected;
 }
 
 /**
@@ -203,17 +214,17 @@ function createCalendarEvent_(p) {
   var minutes = Number(p.meetingDurationMinutes) || 30;
   var end = new Date(start.getTime() + minutes * 60 * 1000);
 
-  var title = "Discovery Call â€” " + p.name + " / " + (p.company || "â€”");
+  var title = "Discovery Call - " + p.name + " / " + (p.company || "-");
   var description =
     "AI Lead Qualification\n\n" +
     "Lead: " + p.name + "\n" +
-    "Company: " + (p.company || "â€”") + "\n" +
+    "Company: " + (p.company || "-") + "\n" +
     "Email: " + p.email + "\n\n" +
     "AI Score: " + p.score + "\n" +
     "Priority: " + p.priority + "\n" +
-    "Intent: " + (p.intent || "â€”") + "\n\n" +
-    "AI Summary: " + (p.summary || "â€”") + "\n\n" +
-    "Recommended Action: " + (p.recommendedAction || "â€”") + "\n\n" +
+    "Intent: " + (p.intent || "-") + "\n\n" +
+    "AI Summary: " + (p.summary || "-") + "\n\n" +
+    "Recommended Action: " + (p.recommendedAction || "-") + "\n\n" +
     "Created automatically by Project Demo.";
 
   var options = { description: description };
@@ -229,13 +240,15 @@ function createCalendarEvent_(p) {
 }
 
 /**
- * Best-effort HTML link to the calendar event.
+ * Best-effort HTML link to the calendar event. Uses the advanced Calendar API
+ * when enabled (see appsscript.json dependencies), otherwise falls back to a
+ * standard event link built from the event id.
  */
 function eventHtmlLink_(event) {
-  // Prefer the official calendar API link when the advanced service is available.
+  var calendarId = CalendarApp.getDefaultCalendar().getId();
   try {
     var details = Calendar.Events.get(
-      "primary",
+      calendarId,
       event.getId(),
       { timeZone: Session.getScriptTimeZone() }
     );
@@ -243,7 +256,11 @@ function eventHtmlLink_(event) {
   } catch (err) {
     Logger.log("htmlLink lookup failed: " + err);
   }
-  return "https://calendar.google.com/calendar/event?eid=" + encodeURIComponent(event.getId());
+  var eid = Utilities.base64Encode(calendarId + "_" + event.getId())
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+  return "https://calendar.google.com/calendar/event?eid=" + eid;
 }
 
 function formatTimestamp_(date) {

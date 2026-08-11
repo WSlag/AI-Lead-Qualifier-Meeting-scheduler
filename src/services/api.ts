@@ -38,18 +38,25 @@ export interface SchedulePayload {
   leadId: string;
   meetingStart: string;
   meetingDurationMinutes?: number;
+  name: string;
+  email: string;
+  company?: string;
+  score: number;
+  priority: string;
+  intent: string;
+  summary: string;
+  recommendedAction: string;
+  source: string;
 }
 
 export async function scheduleDiscoveryCall(
-  leadId: string,
-  meetingStart: string
+  payload: SchedulePayload
 ): Promise<SubmissionResult> {
   if (!N8N_SCHEDULE_WEBHOOK_URL) {
     throw new Error(
       "Scheduling is not configured. Set the VITE_N8N_SCHEDULE_WEBHOOK_URL environment variable."
     );
   }
-  const payload: SchedulePayload = { leadId, meetingStart };
   const res = await fetch(N8N_SCHEDULE_WEBHOOK_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

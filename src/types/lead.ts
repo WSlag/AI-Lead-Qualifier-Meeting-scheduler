@@ -29,6 +29,7 @@ export interface Lead {
   summary: string;
   recommendedAction: string;
   status: LeadStatus;
+  source?: string;
   createdAt: string;
   updatedAt: string;
 

@@ -43,6 +43,8 @@
 | `summary` | string | yes | From DeepSeek |
 | `recommendedAction` | string | yes | From DeepSeek |
 | `status` | string | yes | NEW / CONTACTED / QUALIFIED / DISQUALIFIED |
+
+> The browser may only write `status` (and `updatedAt`) — that is the "Mark as Contacted" patch. Create, delete, and every other field write are n8n-only (service account).
 | `source` | string | no | e.g. `WEB_FORM` |
 | `activityLogged` | boolean | no | Whether the Sheet log succeeded |
 | `calendarEventCreated` | boolean | no | |

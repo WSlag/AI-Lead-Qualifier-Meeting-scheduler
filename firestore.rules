@@ -3,11 +3,16 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // Dashboard reads are public for the demo.
-    // All writes are performed by n8n using the Admin SDK (service account),
-    // which bypasses these rules. The browser can only read.
+    // Create/delete are performed only by n8n using the Admin SDK (service account),
+    // which bypasses these rules.
+    // The browser may only patch the lead status fields ("Mark as Contacted").
     match /leads/{leadId} {
       allow read: if true;
-      allow create, update, delete: if false;
+      allow create: if false;
+      allow delete: if false;
+      allow update: if request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(["status", "updatedAt"])
+        && request.resource.data.status is string;
     }
     match /{document=**} {
       allow read, write: if false;

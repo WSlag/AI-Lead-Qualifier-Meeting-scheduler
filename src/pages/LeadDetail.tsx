@@ -67,7 +67,19 @@ export function LeadDetail() {
     setScheduling(true);
     setScheduleError(null);
     try {
-      await scheduleDiscoveryCall(load.lead.id, meetingStart);
+      await scheduleDiscoveryCall({
+        leadId: load.lead.id,
+        meetingStart,
+        name: load.lead.name,
+        email: load.lead.email,
+        company: load.lead.company,
+        score: load.lead.score,
+        priority: load.lead.priority,
+        intent: load.lead.intent,
+        summary: load.lead.summary,
+        recommendedAction: load.lead.recommendedAction,
+        source: load.lead.source ?? "WEB_FORM",
+      });
       await refresh();
       setMeetingStart("");
     } catch (err) {

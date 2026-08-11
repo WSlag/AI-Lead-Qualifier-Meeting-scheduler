@@ -45,7 +45,7 @@ The Firebase web config used by the app is populated in `.env` (public values on
    - **Header Auth** for DeepSeek: value `Bearer <DEEPSEEK_API_KEY>`
    - **Header Auth** for Apps Script: value `Bearer <APPS_SCRIPT_SECRET>`
    - **Gmail OAuth2** (Google Cloud OAuth client) — see `docs/GOOGLE_WORKSPACE.md`
-   - **Firebase/Firestore** credential (service account) for the Firestore nodes
+    - **Google Cloud Firestore credential** (Service Account — `googleApi` type) for the Firestore nodes
 3. Set environment values (or edit node fields):
    - `APPS_SCRIPT_URL` — the `/exec` Web App URL
    - `NOTIFY_EMAIL` — Gmail recipient
@@ -60,7 +60,7 @@ The Firebase web config used by the app is populated in `.env` (public values on
 ## Google Apps Script
 
 1. Create a project at https://script.google.com.
-2. Add `google-apps-script/Code.gs`.
+2. Add `google-apps-script/Code.js`.
 3. Follow `docs/GOOGLE_WORKSPACE.md` for Calendar/Sheets setup, properties (`WEBHOOK_SECRET`, `SPREADSHEET_ID`), and Web App deployment.
 4. Copy the `/exec` URL into n8n's `APPS_SCRIPT_URL`.
 

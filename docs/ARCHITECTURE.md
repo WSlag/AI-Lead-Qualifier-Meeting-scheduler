@@ -103,7 +103,9 @@ Mini CRM Dashboard
   ↓
 IF score >= 80
   ├─ NO  → Apps Script LOG_ACTIVITY → Sheets → Firestore update
-  └─ YES → Apps Script QUALIFY_AND_SCHEDULE → Calendar + Sheets → Gmail → Firestore update
+  └─ YES → Apps Script QUALIFY_AND_SCHEDULE → Calendar + Sheets → Firestore update:
+             event created? ─┬─ YES → Gmail → respond "scheduled"
+                             └─ NO  → respond "could not be scheduled" (no Gmail)
 ```
 
 ## Architectural Principles
@@ -112,4 +114,4 @@ IF score >= 80
 2. **Firestore is the source of truth.** Sheets is a log, never a duplicate database.
 3. **No private credentials in browser code.** DeepSeek, Apps Script, and Gmail secrets live in n8n credentials.
 4. **The frontend never depends on Google Sheets.** Sheet failures must not break the lead record or the dashboard.
-5. **Independent failure handling.** Calendar, Sheets, and Gmail failures are recorded separately and never misrepresented as success.
+5. **Independent failure handling.** Calendar, Sheets, and Gmail failures are recorded separately and never misrepresented as success. Gmail only fires when the Calendar event was actually created (gated by an IF node).
