@@ -239,27 +239,18 @@ function createCalendarEvent_(p) {
 }
 
 /**
- * Best-effort HTML link to the calendar event. Uses the advanced Calendar API
- * when enabled (see appsscript.json dependencies), otherwise falls back to a
- * standard event link built from the event id.
+ * HTML link to the calendar event. Builds a stable event link from the
+ * calendar + event ids using the modern Calendar web UI path. The legacy
+ * "calendar/event?eid=" format returns HTTP 400 for these events, so it is
+ * not used.
  */
 function eventHtmlLink_(event) {
   var calendarId = CalendarApp.getDefaultCalendar().getId();
-  try {
-    var details = Calendar.Events.get(
-      calendarId,
-      event.getId(),
-      { timeZone: Session.getScriptTimeZone() }
-    );
-    if (details.htmlLink) return details.htmlLink;
-  } catch (err) {
-    Logger.log("htmlLink lookup failed: " + err);
-  }
   var eid = Utilities.base64Encode(calendarId + "_" + event.getId())
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "");
-  return "https://calendar.google.com/calendar/event?eid=" + eid;
+  return "https://calendar.google.com/calendar/r/event?eid=" + eid;
 }
 
 function formatTimestamp_(date) {
