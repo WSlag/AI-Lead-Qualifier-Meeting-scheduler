@@ -13,25 +13,27 @@ Two independent entries feed one shared "schedule" branch:
 ENTRY 1 (main)                  ENTRY 2 (manual schedule)
 Webhook POST /lead              Webhook POST /schedule
    ↓                              ↓
-Validate Lead                   Apps Script Schedule + Log (Manual)
+Validate Lead                    Get Lead (Manual)            (Firestore read by leadId)
    ↓                              ↓
-DeepSeek Qualification          Update Lead (Scheduled Manual)
-   ↓                              ↓
-Parse DeepSeek JSON             Calendar Created? (Manual)  (IF)
-   ↓                              ├─ TRUE  → Respond (Manual Schedule)
-Save Lead to Firestore           └─ FALSE → Respond (Manual Schedule - Failed)
-   ↓
-Score >= 80?  (IF)
-   ├── TRUE  → Apps Script Schedule + Log  → Update Lead (Scheduled) → Calendar Created?  (IF)
-   │            ├─ TRUE  → Gmail Notification → Respond (Lead High)
-   │            └─ FALSE → Respond (Lead High - Scheduling Failed)
-   └── FALSE → Apps Script Log Activity    → Update Lead (Activity Logged)
+Valid Lead?  (IF)                Already Scheduled?  (IF — calendarEventCreated == true?)
+   ├─ NO  → Respond (Validation Error) 400  ├─ YES → Respond (Manual Schedule - Already Scheduled)
+   └─ YES → DeepSeek Qualification         └─ NO  → Merge Webhook + Lead   (Code)
+               ↓                                      ↓
+            Parse DeepSeek JSON              Apps Script Schedule + Log (Manual)
+               ↓                                      ↓
+            Save Lead to Firestore           Update Lead (Scheduled Manual)
+               ↓                                      ↓
+            Score >= 80?  (IF)               Calendar Created? (Manual)  (IF)
+               ├── TRUE  → Apps Script Schedule + Log  → Update Lead (Scheduled) → Calendar Created?  (IF)
+               │            ├─ TRUE  → Gmail Notification → Respond (Lead High)
+               │            └─ FALSE → Respond (Lead High - Scheduling Failed)
+               └── FALSE → Apps Script Log Activity    → Update Lead (Activity Logged)
 ```
 
 n8n wiring facts you need up front:
 
 1. **Output ports:** nodes emit on small circles on the right edge; input ports are on the left edge. Drag from an output circle to the next node's left edge.
-2. **IF node outputs (critical):** the IF node has exactly two outputs — the **top/first one is TRUE**, the **bottom/second one is FALSE**. The export formerly had these swapped; the repo copy is now corrected. When you re-wire, connect **TRUE → Apps Script Schedule + Log** and **FALSE → Apps Script Log Activity**.
+2. **IF node outputs (critical):** every IF node has exactly two outputs — the **top/first one is TRUE**, the **bottom/second one is FALSE**. The export formerly had these swapped; the repo copy is now corrected. When you re-wire, connect **TRUE → Apps Script Schedule + Log** and **FALSE → Apps Script Log Activity**.
 3. **Credentials are not in this file** — they live in the n8n credential store and must be re-attached per node (open any node whose warning shows "Set credential needed" and pick the matching saved credential). See the Credentials table at the end.
 4. After wiring, the workflow is **inactive** until you flick **Active** (bottom-toggle in the editor) — do that last, after testing.
 
@@ -58,12 +60,13 @@ n8n wiring facts you need up front:
 
 ### Node 2 — `Validate Lead`  (Code node)
 
-- `Mode` (JavaScript): the code trims `name`/`email`/`message`, checks presence + email regex, and **throws** with `{ code: 400, errors }` on invalid input so bad leads never reach DeepSeek or cost you tokens.
+- `Mode` (JavaScript): the code trims `name`/`email`/`message`, checks presence + email regex, and returns **`{ valid: false, errors }`** on invalid input (it does **not** throw). Bad leads never reach DeepSeek or cost you tokens.
 
 **Output shape** (valid leads only):
 
 ```json
 {
+  "valid": true,
   "name": "John Smith",
   "email": "john@example.com",
   "company": "ABC Corp",
@@ -72,7 +75,24 @@ n8n wiring facts you need up front:
 }
 ```
 
-**Wire here:** output → next node **`DeepSeek Qualification`**.
+Invalid leads return `{ "valid": false, "errors": { "name": "...", "email": "...", ... } }`.
+
+**Wire here:** output → next node **`Valid Lead?`** (the new IF gate), NOT DeepSeek directly.
+
+---
+
+### Node 2b — `Valid Lead?`  (IF node)
+
+- Condition: **Boolean equals true** — left value `={{ $json.valid ?? false }}`, operator `boolean / true`.
+- **TRUE** (top, index 0) → **`DeepSeek Qualification`**
+- **FALSE** (bottom, index 1) → **`Respond (Validation Error)`**
+
+### Node 2c — `Respond (Validation Error)`  (Respond to Webhook node)
+
+- `respondWith`: **json**, `options.responseCode`: **400**
+- `responseBody`: `={\n  "ok": false,\n  "message": "Invalid lead data.",\n  "errors": "={{ JSON.stringify($json.errors || {}) }}"\n}`
+
+> **Fix applied:** validation previously **threw** from the Code node, which (in `responseNode` mode) left the caller with no 400 reply — the docs promised "Client error (400)" but the webhook actually hung or returned 500. It now routes invalid payloads through the IF to a dedicated Respond node with a real HTTP 400.
 
 ---
 
@@ -186,7 +206,7 @@ Score ≥ 80 ⇒ book the discovery call + notify. Score < 80 ⇒ just log the a
 
 - `Method`: **POST** · `URL`: **`={{ $env.APPS_SCRIPT_URL }}`** · Header auth (`appsScriptSecret`); the body also carries `"secret": {{ $credentials.value }}`.
 - `Send Body`: JSON with `"action": "QUALIFY_AND_SCHEDULE"`:
-  - `leadId = {{ $json.id }}` (input here is the Firestore-created doc, so `$json.id` is the doc id ✓ — keep this one as `$json.id`)
+  - `leadId = {{ $('Parse DeepSeek JSON').item.json.leadId }}` (the canonical leadId generated in Node 4 — this is what was written as the Firestore document id; it no longer relies on the Firestore node's output shape)
   - `name/email/company/score/priority/intent/summary/recommendedAction/source` from `{{ $('Parse DeepSeek JSON').item.json.* }}`
   - `meetingStart = {{ $env.DEFAULT_MEETING_START }}` (e.g. next business day 10:00)
   - `meetingDurationMinutes = 30`
@@ -269,13 +289,51 @@ Runs **only** on the TRUE output of `Calendar Created?` — a failed Calendar at
   "source": "WEB_FORM", "meetingStart": "2026-08-12T10:00:00.000Z", "meetingDurationMinutes": 30 }
 ```
 
+**Wire here:** output → **`Get Lead (Manual)`**.
+
+### Node 12b — `Get Lead (Manual)`  (Firebase → Firestore node)
+
+- `Operation`: **Get** · `Resource`: **Document** · `Collection`: **`leads`** · `Document ID`: **`={{ $json.leadId }}`**
+- Uses the same service-account credential as the other Firestore nodes.
+
+**What it does:** reads the existing lead so the branch can (a) short-circuit when a meeting is already scheduled and (b) send the freshest Firestore data to Apps Script.
+
+**Wire here:** output → **`Already Scheduled?`**.
+
+### Node 12c — `Already Scheduled?`  (IF node)
+
+- Condition: **Boolean equals true** — left value `={{ $json.calendarEventCreated ?? false }}`, operator `boolean / true`.
+
+| Output (port) | Connect to |
+| --- | --- |
+| **TRUE** (top, index 0) | **`Respond (Manual Schedule - Already Scheduled)`** |
+| **FALSE** (bottom, index 1) | **`Merge Webhook + Lead`** |
+
+> **Fix applied (duplicate protection, docs §10):** the manual webhook previously called Apps Script unconditionally, so a second POST for an already-scheduled lead created a duplicate calendar event. The lead is now read from Firestore first and the schedule call is skipped when `calendarEventCreated` is already `true`.
+
+### Node 12d — `Respond (Manual Schedule - Already Scheduled)`  (Respond to Webhook node)
+
+- `respondWith`: **json**
+- `responseBody`: `={\n  "leadId": "={{ $('Lead Webhook (Schedule)').first().json.leadId }}",\n  "message": "Discovery call already scheduled.",\n  "calendarEventUrl": "={{ $json.calendarEventUrl || '' }}"\n}`
+
+### Node 12e — `Merge Webhook + Lead`  (Code node)
+
+- `Mode` (JavaScript): merges the fetched lead document with the webhook payload so the downstream Apps Script call keeps the user's `meetingStart` (which is not stored on the lead document) and the canonical `leadId`:
+
+```javascript
+const doc = $input.first().json;
+const webhook = $('Lead Webhook (Schedule)').first().json;
+const source = webhook && webhook.body && webhook.body.leadId ? webhook.body : webhook;
+return { json: { ...doc, ...source, id: (doc && doc.id) || (source && source.leadId) } };
+```
+
 **Wire here:** output → **`Apps Script Schedule + Log (Manual)`**.
 
 ---
 
 ### Node 13 — `Apps Script Schedule + Log (Manual)`  (HTTP Request node)
 
-Identical to Node 9, except the body reads straight from this webhook's payload: `leadId = {{ $json.leadId }}` (payload key is `leadId`), `name/email/…/score/priority/…` via `{{ $json.* }}`, and `meetingStart = {{ $json.meetingStart }}` (the user's pick, not the env default).
+Identical to Node 9, except the body reads from the merged webhook + lead item produced by `Merge Webhook + Lead`: `leadId = {{ $json.leadId }}` (from the webhook payload), `name/email/…/score/priority/…` via `{{ $json.* }}`, and `meetingStart = {{ $json.meetingStart }}` (the user's pick, not the env default).
 
 > **Fix applied:** the old file used `{{ $json.id }}` for leadId here; the schedule payload has no `id` key, so it now uses `{{ $json.leadId }}`.
 
@@ -319,7 +377,9 @@ Same gate as Node 10b, for the manual branch — left value `={{ $('Apps Script 
 | From node | Output port | To node |
 | --- | --- | --- |
 | Lead Webhook | main | Validate Lead |
-| Validate Lead | main | DeepSeek Qualification |
+| Validate Lead | main | Valid Lead? |
+| Valid Lead? | **TRUE** (1st/top) | DeepSeek Qualification |
+| Valid Lead? | **FALSE** (2nd/bottom) | Respond (Validation Error) |
 | DeepSeek Qualification | main | Parse DeepSeek JSON |
 | Parse DeepSeek JSON | main | Save Lead to Firestore |
 | Save Lead to Firestore | main | Score >= 80? |
@@ -331,7 +391,11 @@ Same gate as Node 10b, for the manual branch — left value `={{ $('Apps Script 
 | Calendar Created? | **TRUE** (1st/top) | Gmail Notification |
 | Calendar Created? | **FALSE** (2nd/bottom) | Respond (Lead High - Scheduling Failed) |
 | Gmail Notification | main | Respond (Lead High) |
-| Lead Webhook (Schedule) | main | Apps Script Schedule + Log (Manual) |
+| Lead Webhook (Schedule) | main | Get Lead (Manual) |
+| Get Lead (Manual) | main | Already Scheduled? |
+| Already Scheduled? | **TRUE** (1st/top) | Respond (Manual Schedule - Already Scheduled) |
+| Already Scheduled? | **FALSE** (2nd/bottom) | Merge Webhook + Lead |
+| Merge Webhook + Lead | main | Apps Script Schedule + Log (Manual) |
 | Apps Script Schedule + Log (Manual) | main | Update Lead (Scheduled Manual) |
 | Update Lead (Scheduled Manual) | main | Calendar Created? (Manual) |
 | Calendar Created? (Manual) | **TRUE** (1st/top) | Respond (Manual Schedule) |
@@ -351,16 +415,18 @@ Same gate as Node 10b, for the manual branch — left value `={{ $('Apps Script 
 | --- | --- |
 | DeepSeek Qualification | HTTP Header Auth (`DEEPSEEK_API_KEY`) |
 | Apps Script ×3 (7, 9, 13) | HTTP Header Auth (`appsScriptSecret`) |
-| Save Lead to Firestore, Update Lead ×3 | Google Cloud / Firebase service account |
+| Save Lead to Firestore, Get Lead (Manual), Update Lead ×3 | Google Cloud / Firebase service account |
 | Gmail Notification | Google account (OAuth) |
 
 > **Auth note:** Apps Script web apps cannot read HTTP request headers, so the workflow also sends the Apps Script Header Auth credential's value (`{{ $credentials.value }}`) as `"secret"` inside each Apps Script request body. Set that credential's **value** to `WEBHOOK_SECRET`; the `Authorization` header it also sends is harmless but ignored by Apps Script.
 
 ## Suggested check-out sequence
 
-1. Re-wire Node 6 (the IF) — TRUE → Schedule, FALSE → Log.
+1. Re-wire the IF nodes — `Score >= 80?`: TRUE → Schedule, FALSE → Log; `Valid Lead?`: TRUE → DeepSeek, FALSE → Respond (Validation Error); `Already Scheduled?`: TRUE → Respond (already scheduled), FALSE → Merge Webhook + Lead; `Calendar Created?` (+ Manual): TRUE → Gmail/Respond, FALSE → failure Respond.
 2. Re-wire every missing connection per the table (the live copy was missing 6 wires).
-3. Verify the three expression fixes landed (Nodes 4, 10, 13). Optional — you can also just re-import `n8n/workflow.lead-qualifier.json` and attach credentials, since the repo file already contains all fixes.
+3. Verify the expression fixes landed (Node 4 `lead`, Node 9 `leadId`, Node 13 `leadId`, Node 2 valid-flag, and the new `Get Lead (Manual)` / `Already Scheduled?` / `Merge Webhook + Lead` nodes). Optional — you can also just re-import `n8n/workflow.lead-qualifier.json` and attach credentials, since the repo file already contains all fixes.
 4. Test end-to-end: **Execute Workflow** with a test payload where `name/email/message` are filled. Confirm the Firestore doc appears with real `name`/`email` and a correct `ai.score`.
-5. Fire a second test with a low-score message, confirm it goes to `Log Activity` (meetingStatus `NOT_REQUIRED`), and a third with a high-score message to check Calendar event + Gmail + `meetingStatus: SCHEDULED`. Then simulate a Calendar failure to confirm the `Calendar Created?` FALSE branch responds with the honest "could not be scheduled" message and **no Gmail**.
-6. Only after tests pass: flick the workflow **Active**.
+5. Test invalid payload (missing `email`) — expect the `Valid Lead?` FALSE branch to reply HTTP **400** `{ ok: false, message, errors }` and **no** DeepSeek call.
+6. Fire a low-score message → `Log Activity` (meetingStatus `NOT_REQUIRED`); a high-score message → Calendar event + Gmail + `meetingStatus: SCHEDULED`. Simulate a Calendar failure → `Calendar Created?` FALSE branch responds honestly "could not be scheduled" with **no Gmail**.
+7. Test the manual `/schedule` webhook twice for the same lead — the second call must short-circuit on `Already Scheduled?` and return the existing `calendarEventUrl` without creating a second event.
+8. Only after tests pass: flick the workflow **Active**.

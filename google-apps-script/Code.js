@@ -75,8 +75,7 @@ function doPost(e) {
           sheetLogged: false,
           calendarCreated: false,
           error: "Unable to write activity log and create calendar event.",
-        },
-        500
+        }
       );
     }
 

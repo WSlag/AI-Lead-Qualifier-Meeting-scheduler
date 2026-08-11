@@ -7,3 +7,7 @@ firebase-debug.log
 firestore-debug.log
 *.tsbuildinfo
 .DS_Store
+
+# Local tool config (may reference personal endpoints / keys)
+opencode.jsonc
+google-apps-script/.clasp.json

@@ -29,7 +29,57 @@
         288
       ],
       "parameters": {
-        "jsCode": "const { name, email, company, message } = $input.item.json;\n\nconst errors = {};\nif (!name || String(name).trim() === '') errors.name = 'name is required.';\nif (!email || String(email).trim() === '') errors.email = 'email is required.';\nelse if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(String(email).trim())) errors.email = 'email is not valid.';\nif (!message || String(message).trim() === '') errors.message = 'message is required.';\n\nif (Object.keys(errors).length > 0) {\n  throw new Error(JSON.stringify({ code: 400, errors }));\n}\n\nreturn { json: {\n  name: String(name).trim(),\n  email: String(email).trim(),\n  company: company ? String(company).trim() : '',\n  message: String(message).trim(),\n  source: 'WEB_FORM'\n} };"
+        "jsCode": "const { name, email, company, message } = $input.item.json;\n\nconst errors = {};\nif (!name || String(name).trim() === '') errors.name = 'name is required.';\nif (!email || String(email).trim() === '') errors.email = 'email is required.';\nelse if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(String(email).trim())) errors.email = 'email is not valid.';\nif (!message || String(message).trim() === '') errors.message = 'message is required.';\n\nif (Object.keys(errors).length > 0) {\n  return { json: { valid: false, errors } };\n}\n\nreturn { json: {\n  valid: true,\n  name: String(name).trim(),\n  email: String(email).trim(),\n  company: company ? String(company).trim() : '',\n  message: String(message).trim(),\n  source: 'WEB_FORM'\n} };"
+      }
+    },
+    {
+      "id": "valid-lead-if-1",
+      "name": "Valid Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1528,
+        208
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.valid ?? false }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "id": "condition-valid-lead"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "respond-validation-error-1",
+      "name": "Respond (Validation Error)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -1280,
+        96
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"ok\": false,\n  \"message\": \"Invalid lead data.\",\n  \"errors\": \"={{ JSON.stringify($json.errors || {}) }}\"\n}",
+        "options": {
+          "responseCode": 400
+        }
       }
     },
     {
@@ -71,7 +121,7 @@
         288
       ],
       "parameters": {
-        "jsCode": "const raw = $input.item.json;\nconst content = raw?.choices?.[0]?.message?.content;\nif (!content) throw new Error('DeepSeek returned no content.');\nconst ai = JSON.parse(content);\n\nconst validPriority = ['LOW', 'MEDIUM', 'HIGH'];\nconst score = Number(ai.score);\nlet priority = String(ai.priority || '').toUpperCase();\nif (!validPriority.includes(priority)) {\n  priority = score >= 80 ? 'HIGH' : score >= 50 ? 'MEDIUM' : 'LOW';\n}\nif (score < 0 || score > 100) throw new Error('Invalid score from DeepSeek.');\n\nconst leadId = 'lead_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);\n\nreturn { json: {\n  leadId,\n  lead: $('Validate Lead').first().json,\n  ai: {\n    score,\n    priority,\n    intent: String(ai.intent || ''),\n    summary: String(ai.summary || ''),\n    recommendedAction: String(ai.recommendedAction || '')\n  }\n} };"
+        "jsCode": "const raw = $input.item.json;\nconst content = raw?.choices?.[0]?.message?.content;\nif (!content) throw new Error('DeepSeek returned no content.');\nconst ai = JSON.parse(content);\n\nconst validPriority = ['LOW', 'MEDIUM', 'HIGH'];\nconst score = Number(ai.score);\nlet priority = String(ai.priority || '').toUpperCase();\nif (!validPriority.includes(priority)) {\n  priority = score >= 80 ? 'HIGH' : score >= 50 ? 'MEDIUM' : 'LOW';\n}\nif (Number.isNaN(score) || score < 0 || score > 100) throw new Error('Invalid score from DeepSeek.');\n\nconst leadId = 'lead_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);\n\nreturn { json: {\n  leadId,\n  lead: $('Validate Lead').first().json,\n  ai: {\n    score,\n    priority,\n    intent: String(ai.intent || ''),\n    summary: String(ai.summary || ''),\n    recommendedAction: String(ai.recommendedAction || '')\n  }\n} };"
       }
     },
     {
@@ -220,7 +270,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"secret\": \"={{ $credentials.value }}\",\n  \"action\": \"QUALIFY_AND_SCHEDULE\",\n  \"leadId\": \"={{ $json.id }}\",\n  \"name\": \"={{ $('Parse DeepSeek JSON').item.json.lead.name }}\",\n  \"email\": \"={{ $('Parse DeepSeek JSON').item.json.lead.email }}\",\n  \"company\": \"={{ $('Parse DeepSeek JSON').item.json.lead.company }}\",\n  \"score\": \"={{ $('Parse DeepSeek JSON').item.json.ai.score }}\",\n  \"priority\": \"={{ $('Parse DeepSeek JSON').item.json.ai.priority }}\",\n  \"intent\": \"={{ $('Parse DeepSeek JSON').item.json.ai.intent }}\",\n  \"summary\": \"={{ $('Parse DeepSeek JSON').item.json.ai.summary }}\",\n  \"recommendedAction\": \"={{ $('Parse DeepSeek JSON').item.json.ai.recommendedAction }}\",\n  \"source\": \"={{ $('Parse DeepSeek JSON').item.json.lead.source }}\",\n  \"meetingStart\": \"={{ $env.DEFAULT_MEETING_START }}\",\n  \"meetingDurationMinutes\": 30\n}",
+        "jsonBody": "={\n  \"secret\": \"={{ $credentials.value }}\",\n  \"action\": \"QUALIFY_AND_SCHEDULE\",\n  \"leadId\": \"={{ $('Parse DeepSeek JSON').item.json.leadId }}\",\n  \"name\": \"={{ $('Parse DeepSeek JSON').item.json.lead.name }}\",\n  \"email\": \"={{ $('Parse DeepSeek JSON').item.json.lead.email }}\",\n  \"company\": \"={{ $('Parse DeepSeek JSON').item.json.lead.company }}\",\n  \"score\": \"={{ $('Parse DeepSeek JSON').item.json.ai.score }}\",\n  \"priority\": \"={{ $('Parse DeepSeek JSON').item.json.ai.priority }}\",\n  \"intent\": \"={{ $('Parse DeepSeek JSON').item.json.ai.intent }}\",\n  \"summary\": \"={{ $('Parse DeepSeek JSON').item.json.ai.summary }}\",\n  \"recommendedAction\": \"={{ $('Parse DeepSeek JSON').item.json.ai.recommendedAction }}\",\n  \"source\": \"={{ $('Parse DeepSeek JSON').item.json.lead.source }}\",\n  \"meetingStart\": \"={{ $env.DEFAULT_MEETING_START }}\",\n  \"meetingDurationMinutes\": 30\n}",
         "options": {}
       }
     },
@@ -627,6 +677,86 @@
         "respondWith": "json",
         "responseBody": "={\n  \"leadId\": \"={{ $('Lead Webhook (Schedule)').first().json.leadId }}\",\n  \"message\": \"Discovery call could not be scheduled.\"\n}"
       }
+    },
+    {
+      "id": "get-lead-manual-1",
+      "name": "Get Lead (Manual)",
+      "type": "n8n-nodes-base.googleFirebaseCloudFirestore",
+      "typeVersion": 1.1,
+      "position": [
+        -1760,
+        912
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "document",
+        "operation": "get",
+        "projectId": "ai-lead-qualifier-demo",
+        "database": "(default)",
+        "collection": "leads",
+        "simple": true,
+        "documentId": "={{ $json.leadId }}"
+      }
+    },
+    {
+      "id": "already-scheduled-if-1",
+      "name": "Already Scheduled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1536,
+        912
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.calendarEventCreated ?? false }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "id": "condition-already-scheduled"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "merge-webhook-lead-1",
+      "name": "Merge Webhook + Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1312,
+        1000
+      ],
+      "parameters": {
+        "jsCode": "const doc = $input.first().json;\nconst webhook = $('Lead Webhook (Schedule)').first().json;\nconst source = webhook && webhook.body && webhook.body.leadId ? webhook.body : webhook;\nreturn { json: { ...doc, ...source, id: (doc && doc.id) || (source && source.leadId) } };"
+      }
+    },
+    {
+      "id": "respond-already-scheduled-1",
+      "name": "Respond (Manual Schedule - Already Scheduled)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -1280,
+        840
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"leadId\": \"={{ $('Lead Webhook (Schedule)').first().json.leadId }}\",\n  \"message\": \"Discovery call already scheduled.\",\n  \"calendarEventUrl\": \"={{ $json.calendarEventUrl || '' }}\"\n}"
+      }
     }
   ],
   "connections": {
@@ -645,7 +775,25 @@
       "main": [
         [
           {
+            "node": "Valid Lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Lead?": {
+      "main": [
+        [
+          {
             "node": "DeepSeek Qualification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond (Validation Error)",
             "type": "main",
             "index": 0
           }
@@ -799,6 +947,46 @@
       ]
     },
     "Lead Webhook (Schedule)": {
+      "main": [
+        [
+          {
+            "node": "Get Lead (Manual)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Lead (Manual)": {
+      "main": [
+        [
+          {
+            "node": "Already Scheduled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already Scheduled?": {
+      "main": [
+        [
+          {
+            "node": "Respond (Manual Schedule - Already Scheduled)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge Webhook + Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Webhook + Lead": {
       "main": [
         [
           {

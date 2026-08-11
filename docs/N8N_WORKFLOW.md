@@ -15,32 +15,34 @@ The export file lives at `n8n/workflow.lead-qualifier.json`. Import it in n8n vi
 ```
 Webhook (POST /lead)
   ↓
-Validate Lead (Code)
+Validate Lead (Code — flags valid/invalid, never throws)
   ↓
-DeepSeek Qualification (HTTP Request → chat/completions, json_object)
-  ↓
-Parse DeepSeek JSON (Code — normalize + validate, generate leadId)
-  ↓
-Save Lead to Firestore (Google Cloud Firestore, create with documentId)
-  ↓
-Score >= 80? (IF)
-  ├── NO  → Apps Script Log Activity (LOG_ACTIVITY)
-  │            ↓
-  │         Prepare Activity Log Update (Code — merge leadId)
-  │            ↓
-  │         Update Lead (Activity Logged) in Firestore (upsert)
-  │            ↓
-  │         Respond (Lead Low) → JSON {leadId, message}
-  │
-  └── YES → Apps Script Schedule + Log (QUALIFY_AND_SCHEDULE)
+Valid Lead? (IF)
+  ├── NO  → Respond (Validation Error) → 400 {message, errors}
+  └── YES → DeepSeek Qualification (HTTP Request → chat/completions, json_object)
                ↓
-            Prepare Scheduled Update (Code — merge leadId)
+            Parse DeepSeek JSON (Code — normalize + validate, generate leadId)
                ↓
-            Update Lead (Scheduled) in Firestore (upsert)
+            Save Lead to Firestore (Google Cloud Firestore, create with documentId)
                ↓
-            Gmail Notification
-               ↓
-            Respond (Lead High) → JSON {leadId, message}
+            Score >= 80? (IF)
+               ├── NO  → Apps Script Log Activity (LOG_ACTIVITY)
+               │            ↓
+               │         Prepare Activity Log Update (Code — merge leadId)
+               │            ↓
+               │         Update Lead (Activity Logged) in Firestore (upsert)
+               │            ↓
+               │         Respond (Lead Low) → JSON {leadId, message}
+               │
+               └── YES → Apps Script Schedule + Log (QUALIFY_AND_SCHEDULE)
+                            ↓
+                         Prepare Scheduled Update (Code — merge leadId)
+                            ↓
+                         Update Lead (Scheduled) in Firestore (upsert)
+                            ↓
+                         Calendar Created? (IF)
+                            ├── YES → Gmail Notification → Respond (Lead High)
+                            └── NO  → Respond (Lead High - Scheduling Failed)
 ```
 
 ### Manual Schedule Branch
@@ -48,13 +50,21 @@ Score >= 80? (IF)
 ```
 Webhook (POST /schedule)
   ↓
-Apps Script Schedule + Log (Manual)
+Get Lead (Manual) (Firestore get by leadId)
   ↓
-Prepare Scheduled Manual Update (Code — merge leadId)
-  ↓
-Update Lead (Scheduled Manual) in Firestore (upsert)
-  ↓
-Respond (Manual Schedule) → JSON {message}
+Already Scheduled? (IF — calendarEventCreated == true?)
+  ├── YES → Respond (Manual Schedule - Already Scheduled) {leadId, message, calendarEventUrl}
+  └── NO  → Merge Webhook + Lead (Code — keep webhook meetingStart, leadId)
+               ↓
+            Apps Script Schedule + Log (Manual)
+               ↓
+            Prepare Scheduled Manual Update (Code — merge leadId)
+               ↓
+            Update Lead (Scheduled Manual) in Firestore (upsert)
+               ↓
+            Calendar Created? (Manual) (IF)
+               ├── YES → Respond (Manual Schedule) → JSON {message}
+               └── NO  → Respond (Manual Schedule - Failed) → JSON {leadId, message}
 ```
 
 ## 1. Webhook
@@ -78,13 +88,13 @@ Expected payload:
 
 ## 2. Validation (Code node)
 
-Reject the request when any of the following is true:
+Flags the request as invalid when any of the following is true (it does **not** throw):
 
 - `name` missing/blank
 - `email` missing/blank or failing `^[^\s@]+@[^\s@]+\.[^\s@]+$`
 - `message` missing/blank
 
-On failure, throw with an error payload carrying `code: 400` so invalid input never reaches DeepSeek.
+The node returns `{ valid: false, errors: {...} }` on failure or `{ valid: true, name, email, company, message, source }` on success. A `Valid Lead?` IF node gates the flow: the **FALSE** output runs a `Respond (Validation Error)` node that answers the webhook with HTTP **400** and `{ ok: false, message, errors }` — so invalid input never reaches DeepSeek and the caller gets a proper client error instead of a hung/500 response.
 
 ## 3. DeepSeek (HTTP Request node)
 
@@ -172,7 +182,7 @@ After `Update Lead (Scheduled)`, a **`Calendar Created?`** IF node gates the nex
 
 > **Auth note:** the Apps Script Web App cannot read HTTP request headers, so the shared secret (the n8n Header Auth credential value, `{{ $credentials.value }}`) is also sent as `"secret"` in every Apps Script request body and validated there (`?secret=` works for manual curl tests).
 
-The `meetingStart` default time comes from the n8n environment variable `DEFAULT_MEETING_START` (e.g. next business day 10:00) — it is not hard-coded in the UI. The optional on-demand scheduler lets the user pick a date/time via the `POST /schedule` webhook, which re-enters the same schedule branch with the user's `meetingStart`.
+The `meetingStart` default time comes from the n8n environment variable `DEFAULT_MEETING_START` (e.g. next business day 10:00) — it is not hard-coded in the UI. The optional on-demand scheduler lets the user pick a date/time via the `POST /schedule` webhook, which runs a parallel schedule branch (see the Manual Schedule Branch diagram) using the user's `meetingStart`.
 
 ## 7. Lower-Priority Branch
 
@@ -216,11 +226,13 @@ Both webhooks use `responseMode: "responseNode"`. Each execution branch ends wit
 
 | Branch | Response |
 | --- | --- |
+| Invalid payload | `400` `{ "ok": false, "message": "Invalid lead data.", "errors": {...} }` |
 | High priority (Calendar OK) | `{ "leadId": "...", "message": "Lead qualified and meeting scheduled." }` |
 | High priority (Calendar failed) | `{ "leadId": "...", "message": "Lead qualified but the meeting could not be scheduled." }` |
 | Low priority | `{ "leadId": "...", "message": "Lead received and qualified." }` |
 | Manual schedule (Calendar OK) | `{ "leadId": "...", "message": "Discovery call scheduled." }` |
 | Manual schedule (Calendar failed) | `{ "leadId": "...", "message": "Discovery call could not be scheduled." }` |
+| Manual schedule (already scheduled) | `{ "leadId": "...", "message": "Discovery call already scheduled.", "calendarEventUrl": "..." }` |
 
 The schedule webhook is gated by a `Calendar Created? (Manual)` IF node so it always replies (previously nothing was wired and the call could hang), and its success response only claims "scheduled" when the event was really created.
 
@@ -228,10 +240,11 @@ The `leadId` enables the frontend's "View Lead" link and the schedule-discovery-
 
 ## 10. Duplicate Protection
 
-Before scheduling, the workflow (or the Apps Script handler) must ensure:
+Before any scheduling action the workflow must ensure the Firestore lead has `calendarEventCreated != true` — if it is already true, **do not** create another event; return the existing `calendarEventUrl`.
 
-- Firestore lead has `calendarEventCreated != true` — if it is already true, do **not** create another event; return the existing `calendarEventUrl`.
-- Sheet logging uses `leadId` + action to identify (and skip) duplicate operations.
+The **manual schedule branch** implements this with a `Get Lead (Manual)` Firestore read followed by an `Already Scheduled?` IF gate: when `calendarEventCreated` is already `true` the branch responds immediately with the existing `calendarEventUrl` and never calls Apps Script. A `Merge Webhook + Lead` Code node then re-joins the webhook's `meetingStart`/`leadId` (which are not stored on the lead document) with the fetched lead data before the schedule call.
+
+The **main lead branch** cannot double-schedule: the lead document is created in the same execution with `calendarEventCreated: false`, so a fresh lead never re-triggers an event. Combined with Apps Script's `leadId` + action row identity in Sheets, duplicate operations are skipped.
 
 No distributed locking — a simple check is sufficient for the MVP.
 
@@ -244,6 +257,9 @@ No distributed locking — a simple check is sufficient for the MVP.
 | Firestore failure | Downstream processing stops |
 | Sheets failure | Logged; Firestore lead retained; `activityLogged: false`; dashboard unaffected |
 | Calendar failure | `meetingStatus: "FAILED"`; no false "scheduled" claim; no email |
+| Sheets + Calendar both fail | Apps Script returns `success: false` (HTTP 200); Firestore patched with `meetingStatus: "FAILED"`; honest "could not be scheduled" response |
 | Gmail failure | Logged in n8n; lead + calendar event remain valid |
+
+Apps Script always answers with HTTP 200 and reports outcomes via `success` / `sheetLogged` / `calendarCreated` flags (ContentService web apps cannot return other status codes). n8n reads those flags and never marks a meeting scheduled unless `calendarCreated` is true.
 
 Transient external API failures use bounded retries (n8n default). Avoid infinite retries.
