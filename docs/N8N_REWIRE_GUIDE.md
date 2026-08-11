@@ -3,6 +3,14 @@
 > Workflow: **AI Lead Qualification & Meeting Booker** · ID `ZLs19D1POQ29mHm4`
 > This guide walks you through every node in order, what it does, what data it passes on, and how to wire it in the editor. The repo file `n8n/workflow.lead-qualifier.json` is the reference — it already has these fixes applied.
 
+> **⚠️ Corrections to this guide (verified against n8n 2.33.x):**
+> - **Firestore `columns` is a comma-separated string** of field names (e.g. `name,email,score`), not the `columns.values` object shown below. The node reads field values from the input item's top-level JSON, so each write is preceded by a **Prepare Code node** that emits a flat item (`Prepare Lead Document` for the create; the three `Prepare … Update` nodes emit `id` + patch fields).
+> - **Apps Script `secret` comes from the n8n env var `WEBHOOK_SECRET`** (`{{ $env.WEBHOOK_SECRET }}`) — `$credentials.value` does not resolve inside request bodies on this n8n version. Set `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` on the n8n container.
+> - **Webhook data is nested under `json.body`** — expressions/Code nodes that read webhook payloads use `.body` (or a `.body ?? json` fallback).
+> - Inside `=`-prefixed JSON templates use `"{{ expr }}"` — a stray `=` before `{{` (`"={{ expr }}"`) becomes literal text and corrupts values.
+> - The three **Apps Script nodes run with `onError: continueRegularOutput`** so a transient Google 404 degrades gracefully.
+> - The service account used by the Firestore nodes needs **Cloud Datastore User** in GCP IAM (rules don't apply to service accounts).
+
 ---
 
 ## Big picture

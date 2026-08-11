@@ -29,7 +29,7 @@
         288
       ],
       "parameters": {
-        "jsCode": "const { name, email, company, message } = $input.item.json;\n\nconst errors = {};\nif (!name || String(name).trim() === '') errors.name = 'name is required.';\nif (!email || String(email).trim() === '') errors.email = 'email is required.';\nelse if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(String(email).trim())) errors.email = 'email is not valid.';\nif (!message || String(message).trim() === '') errors.message = 'message is required.';\n\nif (Object.keys(errors).length > 0) {\n  return { json: { valid: false, errors } };\n}\n\nreturn { json: {\n  valid: true,\n  name: String(name).trim(),\n  email: String(email).trim(),\n  company: company ? String(company).trim() : '',\n  message: String(message).trim(),\n  source: 'WEB_FORM'\n} };"
+        "jsCode": "const data = $input.item.json.body ?? $input.item.json;\nconst { name, email, company, message } = data;\n\nconst errors = {};\nif (!name || String(name).trim() === '') errors.name = 'name is required.';\nif (!email || String(email).trim() === '') errors.email = 'email is required.';\nelse if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(String(email).trim())) errors.email = 'email is not valid.';\nif (!message || String(message).trim() === '') errors.message = 'message is required.';\n\nif (Object.keys(errors).length > 0) {\n  return { json: { valid: false, errors } };\n}\n\nreturn { json: {\n  valid: true,\n  name: String(name).trim(),\n  email: String(email).trim(),\n  company: company ? String(company).trim() : '',\n  message: String(message).trim(),\n  source: 'WEB_FORM'\n} };"
       }
     },
     {
@@ -76,7 +76,7 @@
       ],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={\n  \"ok\": false,\n  \"message\": \"Invalid lead data.\",\n  \"errors\": \"={{ JSON.stringify($json.errors || {}) }}\"\n}",
+        "responseBody": "={\n  \"ok\": false,\n  \"message\": \"Invalid lead data.\",\n  \"errors\": \"{{ Object.values($json.errors || {}).join('; ') }}\"\n}",
         "options": {
           "responseCode": 400
         }
@@ -107,7 +107,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"deepseek-chat\",\n  \"response_format\": { \"type\": \"json_object\" },\n  \"messages\": [\n    { \"role\": \"system\", \"content\": \"You are a sales lead qualification assistant. Analyze the supplied lead information and return ONLY valid JSON \u2014 do not wrap the response in markdown code blocks. Score the lead from 0 to 100 based on apparent business need, relevance, buying intent, and clarity of the request. Priority: HIGH (80-100), MEDIUM (50-79), LOW (0-49). Do not invent facts not present in the lead. Response must be JSON with keys: score, priority, intent, summary, recommendedAction.\" },\n    { \"role\": \"user\", \"content\": \"Lead: name={{ $json.name }}, email={{ $json.email }}, company={{ $json.company }}, message={{ $json.message }}\" }\n  ]\n}",
+        "jsonBody": "={\n  \"model\": \"deepseek-chat\",\n  \"response_format\": { \"type\": \"json_object\" },\n  \"messages\": [\n    { \"role\": \"system\", \"content\": \"You are a sales lead qualification assistant. Analyze the supplied lead information and return ONLY valid JSON — do not wrap the response in markdown code blocks. Score the lead from 0 to 100 based on apparent business need, relevance, buying intent, and clarity of the request. Priority: HIGH (80-100), MEDIUM (50-79), LOW (0-49). Do not invent facts not present in the lead. Response must be JSON with keys: score, priority, intent, summary, recommendedAction.\" },\n    { \"role\": \"user\", \"content\": \"Lead: name={{ $json.name }}, email={{ $json.email }}, company={{ $json.company }}, message={{ $json.message }}\" }\n  ]\n}",
         "options": {}
       }
     },
@@ -141,75 +141,8 @@
         "database": "(default)",
         "collection": "leads",
         "documentId": "={{ $json.leadId }}",
-        "columns": {
-          "values": [
-            {
-              "name": "name",
-              "value": "={{ $json.lead.name }}"
-            },
-            {
-              "name": "email",
-              "value": "={{ $json.lead.email }}"
-            },
-            {
-              "name": "company",
-              "value": "={{ $json.lead.company }}"
-            },
-            {
-              "name": "message",
-              "value": "={{ $json.lead.message }}"
-            },
-            {
-              "name": "score",
-              "value": "={{ $json.ai.score }}"
-            },
-            {
-              "name": "priority",
-              "value": "={{ $json.ai.priority }}"
-            },
-            {
-              "name": "intent",
-              "value": "={{ $json.ai.intent }}"
-            },
-            {
-              "name": "summary",
-              "value": "={{ $json.ai.summary }}"
-            },
-            {
-              "name": "recommendedAction",
-              "value": "={{ $json.ai.recommendedAction }}"
-            },
-            {
-              "name": "status",
-              "value": "NEW"
-            },
-            {
-              "name": "source",
-              "value": "={{ $json.lead.source }}"
-            },
-            {
-              "name": "activityLogged",
-              "value": "=false"
-            },
-            {
-              "name": "calendarEventCreated",
-              "value": "=false"
-            },
-            {
-              "name": "meetingStatus",
-              "value": "NONE"
-            },
-            {
-              "name": "createdAt",
-              "value": "={{ $now.toISOString() }}"
-            },
-            {
-              "name": "updatedAt",
-              "value": "={{ $now.toISOString() }}"
-            }
-          ]
-        },
-        "simple": true
+        "simple": true,
+        "columns": "name,email,company,message,source,score,priority,intent,summary,recommendedAction,status,activityLogged,calendarEventCreated,meetingStatus,createdAt,updatedAt"
       }
     },
     {
@@ -270,9 +203,10 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"secret\": \"={{ $credentials.value }}\",\n  \"action\": \"QUALIFY_AND_SCHEDULE\",\n  \"leadId\": \"={{ $('Parse DeepSeek JSON').item.json.leadId }}\",\n  \"name\": \"={{ $('Parse DeepSeek JSON').item.json.lead.name }}\",\n  \"email\": \"={{ $('Parse DeepSeek JSON').item.json.lead.email }}\",\n  \"company\": \"={{ $('Parse DeepSeek JSON').item.json.lead.company }}\",\n  \"score\": \"={{ $('Parse DeepSeek JSON').item.json.ai.score }}\",\n  \"priority\": \"={{ $('Parse DeepSeek JSON').item.json.ai.priority }}\",\n  \"intent\": \"={{ $('Parse DeepSeek JSON').item.json.ai.intent }}\",\n  \"summary\": \"={{ $('Parse DeepSeek JSON').item.json.ai.summary }}\",\n  \"recommendedAction\": \"={{ $('Parse DeepSeek JSON').item.json.ai.recommendedAction }}\",\n  \"source\": \"={{ $('Parse DeepSeek JSON').item.json.lead.source }}\",\n  \"meetingStart\": \"={{ $env.DEFAULT_MEETING_START }}\",\n  \"meetingDurationMinutes\": 30\n}",
+        "jsonBody": "={\n  \"secret\": \"{{ $env.WEBHOOK_SECRET }}\",\n  \"action\": \"QUALIFY_AND_SCHEDULE\",\n  \"leadId\": \"{{ $('Parse DeepSeek JSON').item.json.leadId }}\",\n  \"name\": \"{{ $('Parse DeepSeek JSON').item.json.lead.name }}\",\n  \"email\": \"{{ $('Parse DeepSeek JSON').item.json.lead.email }}\",\n  \"company\": \"{{ $('Parse DeepSeek JSON').item.json.lead.company }}\",\n  \"score\": \"{{ $('Parse DeepSeek JSON').item.json.ai.score }}\",\n  \"priority\": \"{{ $('Parse DeepSeek JSON').item.json.ai.priority }}\",\n  \"intent\": \"{{ $('Parse DeepSeek JSON').item.json.ai.intent }}\",\n  \"summary\": \"{{ $('Parse DeepSeek JSON').item.json.ai.summary }}\",\n  \"recommendedAction\": \"{{ $('Parse DeepSeek JSON').item.json.ai.recommendedAction }}\",\n  \"source\": \"{{ $('Parse DeepSeek JSON').item.json.lead.source }}\",\n  \"meetingStart\": \"{{ $env.DEFAULT_MEETING_START }}\",\n  \"meetingDurationMinutes\": 30\n}",
         "options": {}
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "id": "b5dcf5bb-7af4-451b-8882-aa9e7eac79a6",
@@ -299,9 +233,10 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"secret\": \"={{ $credentials.value }}\",\n  \"action\": \"QUALIFY_AND_SCHEDULE\",\n  \"leadId\": \"={{ $json.leadId }}\",\n  \"name\": \"={{ $json.name }}\",\n  \"email\": \"={{ $json.email }}\",\n  \"company\": \"={{ $json.company }}\",\n  \"score\": \"={{ $json.score }}\",\n  \"priority\": \"={{ $json.priority }}\",\n  \"intent\": \"={{ $json.intent }}\",\n  \"summary\": \"={{ $json.summary }}\",\n  \"recommendedAction\": \"={{ $json.recommendedAction }}\",\n  \"source\": \"={{ $json.source }}\",\n  \"meetingStart\": \"={{ $json.meetingStart }}\",\n  \"meetingDurationMinutes\": 30\n}",
+        "jsonBody": "={\n  \"secret\": \"{{ $env.WEBHOOK_SECRET }}\",\n  \"action\": \"QUALIFY_AND_SCHEDULE\",\n  \"leadId\": \"{{ $json.leadId }}\",\n  \"name\": \"{{ $json.name }}\",\n  \"email\": \"{{ $json.email }}\",\n  \"company\": \"{{ $json.company }}\",\n  \"score\": \"{{ $json.score }}\",\n  \"priority\": \"{{ $json.priority }}\",\n  \"intent\": \"{{ $json.intent }}\",\n  \"summary\": \"{{ $json.summary }}\",\n  \"recommendedAction\": \"{{ $json.recommendedAction }}\",\n  \"source\": \"{{ $json.source }}\",\n  \"meetingStart\": \"{{ $json.meetingStart }}\",\n  \"meetingDurationMinutes\": 30\n}",
         "options": {}
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "id": "a33eced8-2bb9-4f12-a8f5-b6db27151424",
@@ -328,9 +263,10 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"secret\": \"={{ $credentials.value }}\",\n  \"action\": \"LOG_ACTIVITY\",\n  \"leadId\": \"={{ $('Parse DeepSeek JSON').item.json.leadId }}\",\n  \"name\": \"={{ $('Parse DeepSeek JSON').item.json.lead.name }}\",\n  \"email\": \"={{ $('Parse DeepSeek JSON').item.json.lead.email }}\",\n  \"company\": \"={{ $('Parse DeepSeek JSON').item.json.lead.company }}\",\n  \"score\": \"={{ $('Parse DeepSeek JSON').item.json.ai.score }}\",\n  \"priority\": \"={{ $('Parse DeepSeek JSON').item.json.ai.priority }}\",\n  \"intent\": \"={{ $('Parse DeepSeek JSON').item.json.ai.intent }}\",\n  \"source\": \"={{ $('Parse DeepSeek JSON').item.json.lead.source }}\"\n}",
+        "jsonBody": "={\n  \"secret\": \"{{ $env.WEBHOOK_SECRET }}\",\n  \"action\": \"LOG_ACTIVITY\",\n  \"leadId\": \"{{ $('Parse DeepSeek JSON').item.json.leadId }}\",\n  \"name\": \"{{ $('Parse DeepSeek JSON').item.json.lead.name }}\",\n  \"email\": \"{{ $('Parse DeepSeek JSON').item.json.lead.email }}\",\n  \"company\": \"{{ $('Parse DeepSeek JSON').item.json.lead.company }}\",\n  \"score\": \"{{ $('Parse DeepSeek JSON').item.json.ai.score }}\",\n  \"priority\": \"{{ $('Parse DeepSeek JSON').item.json.ai.priority }}\",\n  \"intent\": \"{{ $('Parse DeepSeek JSON').item.json.ai.intent }}\",\n  \"source\": \"{{ $('Parse DeepSeek JSON').item.json.lead.source }}\"\n}",
         "options": {}
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "id": "b1957eea-abac-4970-a17d-6073fefee31f",
@@ -349,35 +285,8 @@
         "database": "(default)",
         "collection": "leads",
         "updateKey": "id",
-        "columns": {
-          "values": [
-            {
-              "name": "activityLogged",
-              "value": "={{ $json.sheetLogged }}"
-            },
-            {
-              "name": "calendarEventCreated",
-              "value": "={{ $json.calendarCreated }}"
-            },
-            {
-              "name": "calendarEventId",
-              "value": "={{ $json.calendarEventId || '' }}"
-            },
-            {
-              "name": "calendarEventUrl",
-              "value": "={{ $json.calendarEventUrl || '' }}"
-            },
-            {
-              "name": "meetingStatus",
-              "value": "={{ $json.calendarCreated ? 'SCHEDULED' : 'FAILED' }}"
-            },
-            {
-              "name": "updatedAt",
-              "value": "={{ $now.toISOString() }}"
-            }
-          ]
-        },
-        "simple": true
+        "simple": true,
+        "columns": "activityLogged,calendarEventCreated,calendarEventId,calendarEventUrl,meetingStatus,updatedAt"
       }
     },
     {
@@ -397,35 +306,8 @@
         "database": "(default)",
         "collection": "leads",
         "updateKey": "id",
-        "columns": {
-          "values": [
-            {
-              "name": "activityLogged",
-              "value": "={{ $json.sheetLogged }}"
-            },
-            {
-              "name": "calendarEventCreated",
-              "value": "={{ $json.calendarCreated }}"
-            },
-            {
-              "name": "calendarEventId",
-              "value": "={{ $json.calendarEventId || '' }}"
-            },
-            {
-              "name": "calendarEventUrl",
-              "value": "={{ $json.calendarEventUrl || '' }}"
-            },
-            {
-              "name": "meetingStatus",
-              "value": "={{ $json.calendarCreated ? 'SCHEDULED' : 'FAILED' }}"
-            },
-            {
-              "name": "updatedAt",
-              "value": "={{ $now.toISOString() }}"
-            }
-          ]
-        },
-        "simple": true
+        "simple": true,
+        "columns": "activityLogged,calendarEventCreated,calendarEventId,calendarEventUrl,meetingStatus,updatedAt"
       }
     },
     {
@@ -445,23 +327,8 @@
         "database": "(default)",
         "collection": "leads",
         "updateKey": "id",
-        "columns": {
-          "values": [
-            {
-              "name": "activityLogged",
-              "value": "={{ $json.sheetLogged }}"
-            },
-            {
-              "name": "meetingStatus",
-              "value": "NOT_REQUIRED"
-            },
-            {
-              "name": "updatedAt",
-              "value": "={{ $now.toISOString() }}"
-            }
-          ]
-        },
-        "simple": true
+        "simple": true,
+        "columns": "activityLogged,meetingStatus,updatedAt"
       }
     },
     {
@@ -514,7 +381,7 @@
         432
       ],
       "parameters": {
-        "jsCode": "return { json: { ...$input.item.json, id: $('Parse DeepSeek JSON').first().json.leadId } };"
+        "jsCode": "const r = $input.first().json;\nconst now = new Date().toISOString();\nreturn { json: {\n  id: $('Parse DeepSeek JSON').first().json.leadId,\n  activityLogged: Boolean(r.sheetLogged),\n  calendarEventCreated: Boolean(r.calendarCreated),\n  calendarEventId: r.calendarEventId || '',\n  calendarEventUrl: r.calendarEventUrl || '',\n  meetingStatus: r.calendarCreated ? 'SCHEDULED' : 'FAILED',\n  updatedAt: now\n} };"
       }
     },
     {
@@ -527,7 +394,7 @@
         144
       ],
       "parameters": {
-        "jsCode": "return { json: { ...$input.item.json, id: $('Parse DeepSeek JSON').first().json.leadId } };"
+        "jsCode": "const r = $input.first().json;\nconst now = new Date().toISOString();\nreturn { json: {\n  id: $('Parse DeepSeek JSON').first().json.leadId,\n  activityLogged: Boolean(r.sheetLogged),\n  meetingStatus: 'NOT_REQUIRED',\n  updatedAt: now\n} };"
       }
     },
     {
@@ -540,7 +407,7 @@
         912
       ],
       "parameters": {
-        "jsCode": "return { json: { ...$input.item.json, id: $('Lead Webhook (Schedule)').first().json.leadId } };"
+        "jsCode": "const r = $input.first().json;\nconst now = new Date().toISOString();\nconst webhook = $('Lead Webhook (Schedule)').first().json;\nconst leadId = (webhook && webhook.body && webhook.body.leadId) ? webhook.body.leadId : (webhook && webhook.leadId);\nreturn { json: {\n  id: leadId,\n  activityLogged: Boolean(r.sheetLogged),\n  calendarEventCreated: Boolean(r.calendarCreated),\n  calendarEventId: r.calendarEventId || '',\n  calendarEventUrl: r.calendarEventUrl || '',\n  meetingStatus: r.calendarCreated ? 'SCHEDULED' : 'FAILED',\n  updatedAt: now\n} };"
       }
     },
     {
@@ -554,7 +421,7 @@
       ],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={\n  \"leadId\": \"={{ $('Parse DeepSeek JSON').item.json.leadId }}\",\n  \"message\": \"Lead qualified and meeting scheduled.\"\n}"
+        "responseBody": "={\n  \"leadId\": \"{{ $('Parse DeepSeek JSON').item.json.leadId }}\",\n  \"message\": \"Lead qualified and meeting scheduled.\"\n}"
       }
     },
     {
@@ -568,7 +435,7 @@
       ],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={\n  \"leadId\": \"={{ $('Parse DeepSeek JSON').item.json.leadId }}\",\n  \"message\": \"Lead received and qualified.\"\n}"
+        "responseBody": "={\n  \"leadId\": \"{{ $('Parse DeepSeek JSON').item.json.leadId }}\",\n  \"message\": \"Lead received and qualified.\"\n}"
       }
     },
     {
@@ -629,7 +496,7 @@
       ],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={\n  \"leadId\": \"={{ $('Parse DeepSeek JSON').item.json.leadId }}\",\n  \"message\": \"Lead qualified but the meeting could not be scheduled.\"\n}"
+        "responseBody": "={\n  \"leadId\": \"{{ $('Parse DeepSeek JSON').item.json.leadId }}\",\n  \"message\": \"Lead qualified but the meeting could not be scheduled.\"\n}"
       }
     },
     {
@@ -675,7 +542,7 @@
       ],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={\n  \"leadId\": \"={{ $('Lead Webhook (Schedule)').first().json.leadId }}\",\n  \"message\": \"Discovery call could not be scheduled.\"\n}"
+        "responseBody": "={\n  \"leadId\": \"{{ $('Lead Webhook (Schedule)').first().json.body?.leadId ?? $('Lead Webhook (Schedule)').first().json.leadId }}\",\n  \"message\": \"Discovery call could not be scheduled.\"\n}"
       }
     },
     {
@@ -695,7 +562,7 @@
         "database": "(default)",
         "collection": "leads",
         "simple": true,
-        "documentId": "={{ $json.leadId }}"
+        "documentId": "={{ $json.body?.leadId ?? $json.leadId }}"
       }
     },
     {
@@ -755,7 +622,20 @@
       ],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={\n  \"leadId\": \"={{ $('Lead Webhook (Schedule)').first().json.leadId }}\",\n  \"message\": \"Discovery call already scheduled.\",\n  \"calendarEventUrl\": \"={{ $json.calendarEventUrl || '' }}\"\n}"
+        "responseBody": "={\n  \"leadId\": \"{{ $('Lead Webhook (Schedule)').first().json.body?.leadId ?? $('Lead Webhook (Schedule)').first().json.leadId }}\",\n  \"message\": \"Discovery call already scheduled.\",\n  \"calendarEventUrl\": \"{{ $json.calendarEventUrl || '' }}\"\n}"
+      }
+    },
+    {
+      "id": "prepare-lead-doc-1",
+      "name": "Prepare Lead Document",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1152,
+        288
+      ],
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nconst now = new Date().toISOString();\nreturn { json: {\n  leadId: d.leadId,\n  name: (d.lead && d.lead.name) || '',\n  email: (d.lead && d.lead.email) || '',\n  company: (d.lead && d.lead.company) || '',\n  message: (d.lead && d.lead.message) || '',\n  source: (d.lead && d.lead.source) || 'WEB_FORM',\n  score: (d.ai && d.ai.score) ?? 0,\n  priority: (d.ai && d.ai.priority) || 'LOW',\n  intent: (d.ai && d.ai.intent) || '',\n  summary: (d.ai && d.ai.summary) || '',\n  recommendedAction: (d.ai && d.ai.recommendedAction) || '',\n  status: 'NEW',\n  activityLogged: false,\n  calendarEventCreated: false,\n  meetingStatus: 'NONE',\n  createdAt: now,\n  updatedAt: now\n} };"
       }
     }
   ],
@@ -815,7 +695,7 @@
       "main": [
         [
           {
-            "node": "Save Lead to Firestore",
+            "node": "Prepare Lead Document",
             "type": "main",
             "index": 0
           }
@@ -1042,6 +922,17 @@
         [
           {
             "node": "Respond (Manual Schedule - Failed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Lead Document": {
+      "main": [
+        [
+          {
+            "node": "Save Lead to Firestore",
             "type": "main",
             "index": 0
           }

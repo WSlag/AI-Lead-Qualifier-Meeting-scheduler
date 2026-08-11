@@ -10,6 +10,10 @@
 
 The export file lives at `n8n/workflow.lead-qualifier.json`. Import it in n8n via **Workflows → Import from File**.
 
+> **Expression syntax gotcha:** inside a `=`-prefixed JSON template (e.g. a `jsonBody` or `responseBody`), interpolations must be written `"{{ expr }}"` — **not** `"={{ expr }}"`. The extra `=` is treated as literal text and corrupts the value (e.g. `leadId: "=lead_…"`). This was a common source of bugs in early versions of this workflow.
+
+> **Webhook data nesting:** n8n webhook nodes put the request payload under `json.body`. Code nodes and expressions that read webhook data must use `json.body.field` (or a `.body ?? json` fallback), not `json.field`.
+
 ## Main Flow
 
 ```
@@ -22,6 +26,8 @@ Valid Lead? (IF)
   └── YES → DeepSeek Qualification (HTTP Request → chat/completions, json_object)
                ↓
             Parse DeepSeek JSON (Code — normalize + validate, generate leadId)
+               ↓
+            Prepare Lead Document (Code — flatten all fields for Firestore create)
                ↓
             Save Lead to Firestore (Google Cloud Firestore, create with documentId)
                ↓
@@ -119,22 +125,25 @@ The node returns `{ valid: false, errors: {...} }` on failure or `{ valid: true,
 - Node type: `n8n-nodes-base.googleFirebaseCloudFirestore` v1.1
 - Auth: Service Account (`googleApi` credential)
 - Project ID: `ai-lead-qualifier-demo` (must match the Firebase project)
+- **Service account IAM**: the SA must have a Firestore data role in GCP IAM (e.g. **Cloud Datastore User**) — security rules do **not** apply to service accounts.
+
+> **Node quirk (verified on n8n ≥ 2.x):** this node's `columns` field is a **comma-separated string of field names**, not an object. The node writes `item.json[column]` for each name, so the input item must already contain every field at the top level. `columns.values` from older docs/UI versions does **not** work here.
 
 ### Save Lead to Firestore (create)
 
 - Operation: `create`, resource: `document`
 - Database: `(default)`, collection: `leads`
 - `documentId` = `{{ $json.leadId }}` (generated in Parse step)
-- `columns.values` writes all fields described in `docs/DATA_MODEL.md`:
-  - Original lead values + `source`
-  - AI qualification: `score`, `priority`, `intent`, `summary`, `recommendedAction`
-  - `status: "NEW"`
-  - `activityLogged: false`, `calendarEventCreated: false`, `meetingStatus: "NONE"`
-  - `createdAt` / `updatedAt`
+- Preceded by a **`Prepare Lead Document`** Code node that assembles one flat item with every field (`name`, `email`, `company`, `message`, `source`, `score`, `priority`, `intent`, `summary`, `recommendedAction`, `status: "NEW"`, `activityLogged`, `calendarEventCreated`, `meetingStatus: "NONE"`, `createdAt`, `updatedAt`).
+- `columns` = `name,email,company,message,source,score,priority,intent,summary,recommendedAction,status,activityLogged,calendarEventCreated,meetingStatus,createdAt,updatedAt`
 
 ### Update Lead (upsert)
 
-Updates use `operation: upsert` with `updateKey: "id"` (the input item carries the Firestore document ID as a field named `id`). A Prepare Code node merges the `leadId` into the Apps Script response before the Firestore upsert. This patches only the specified fields without overwriting the entire document.
+Updates use `operation: upsert` with `updateKey: "id"` (the input item carries the Firestore document ID as a field named `id`). A Prepare Code node emits a flat update document (`id` plus only the fields to patch, e.g. `activityLogged,calendarEventCreated,calendarEventId,calendarEventUrl,meetingStatus,updatedAt`) before the Firestore upsert. This patches only the specified fields without overwriting the entire document.
+
+### Get Lead (Manual)
+
+The manual schedule branch reads the existing lead with `operation: get`, `documentId = {{ $json.body?.leadId ?? $json.leadId }}` (webhook data is nested under `.body`), `simple: true`.
 
 ## 6. High-Priority Branch (IF node)
 
@@ -145,7 +154,7 @@ Apps Script `QUALIFY_AND_SCHEDULE` payload (from n8n):
 ```json
 {
   "action": "QUALIFY_AND_SCHEDULE",
-  "secret": "<WEBHOOK_SECRET — the Header Auth credential value, via {{ $credentials.value }}>",
+  "secret": "<WEBHOOK_SECRET — n8n env var, via {{ $env.WEBHOOK_SECRET }}>",
   "leadId": "<firestore doc id>",
   "name": "...",
   "email": "...",
@@ -181,7 +190,7 @@ After `Update Lead (Scheduled)`, a **`Calendar Created?`** IF node gates the nex
 - TRUE response: `{ "leadId": "...", "message": "Lead qualified and meeting scheduled." }`
 - FALSE response: `{ "leadId": "...", "message": "Lead qualified but the meeting could not be scheduled." }`
 
-> **Auth note:** the Apps Script Web App cannot read HTTP request headers, so the shared secret (the n8n Header Auth credential value, `{{ $credentials.value }}`) is also sent as `"secret"` in every Apps Script request body and validated there (`?secret=` works for manual curl tests).
+> **Auth note:** the Apps Script Web App cannot read HTTP request headers, so the shared secret is sent as `"secret"` in every Apps Script request body and validated there. On some n8n versions `$credentials.value` does not resolve inside request bodies, so the secret is read from the n8n **environment variable `WEBHOOK_SECRET`** (`{{ $env.WEBHOOK_SECRET }}`). n8n must be started with **`N8N_BLOCK_ENV_ACCESS_IN_NODE=false`** (otherwise `$env.*` expressions are denied). The Header Auth credential on the Apps Script nodes is kept for the `Authorization` header but is ignored by Apps Script.
 
 The `meetingStart` default time comes from the n8n environment variable `DEFAULT_MEETING_START` (e.g. next business day 10:00) — it is not hard-coded in the UI. The optional on-demand scheduler lets the user pick a date/time via the `POST /schedule` webhook, which runs a parallel schedule branch (see the Manual Schedule Branch diagram) using the user's `meetingStart`.
 
@@ -192,7 +201,7 @@ Apps Script `LOG_ACTIVITY` payload:
 ```json
 {
   "action": "LOG_ACTIVITY",
-  "secret": "<WEBHOOK_SECRET — the Header Auth credential value, via {{ $credentials.value }}>",
+  "secret": "<WEBHOOK_SECRET — n8n env var, via {{ $env.WEBHOOK_SECRET }}>",
   "leadId": "<leadId from Parse step>",
   "name": "...",
   "email": "...",
@@ -259,8 +268,9 @@ No distributed locking — a simple check is sufficient for the MVP.
 | Sheets failure | Logged; Firestore lead retained; `activityLogged: false`; dashboard unaffected |
 | Calendar failure | `meetingStatus: "FAILED"`; no false "scheduled" claim; no email |
 | Sheets + Calendar both fail | Apps Script returns `success: false` (HTTP 200); Firestore patched with `meetingStatus: "FAILED"`; honest "could not be scheduled" response |
+| Apps Script HTTP failure (e.g. transient Google 404) | `onError: continueRegularOutput` on the Apps Script nodes; the flow continues and patches `meetingStatus` accordingly (never hangs the webhook) |
 | Gmail failure | Logged in n8n; lead + calendar event remain valid |
 
-Apps Script always answers with HTTP 200 and reports outcomes via `success` / `sheetLogged` / `calendarCreated` flags (ContentService web apps cannot return other status codes). n8n reads those flags and never marks a meeting scheduled unless `calendarCreated` is true.
+Apps Script always answers with HTTP 200 and reports outcomes via `success` / `sheetLogged` / `calendarCreated` flags (ContentService web apps cannot return other status codes). n8n reads those flags and never marks a meeting scheduled unless `calendarCreated` is true. The three Apps Script nodes run with `onError: continueRegularOutput` so transient Google-side 404s (bot checks) degrade gracefully instead of dropping the webhook response.
 
 Transient external API failures use bounded retries (n8n default). Avoid infinite retries.
