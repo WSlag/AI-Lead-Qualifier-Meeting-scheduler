@@ -46,7 +46,7 @@ export function Header() {
           </NavLink>
           <NavLink
             to="/new"
-            className="rounded-lg bg-primary px-2.5 py-1.5 text-sm font-medium text-white"
+            className="rounded-lg bg-primary px-2.5 py-1.5 text-sm font-medium text-white transition-transform hover:scale-[1.02] active:scale-[0.98]"
           >
             <span className="flex items-center gap-1.5">
               <Plus className="h-4 w-4" aria-hidden />

@@ -6,11 +6,18 @@ const styles: Record<Priority, string> = {
   LOW: "bg-success-soft text-success",
 };
 
+const dots: Record<Priority, string> = {
+  HIGH: "bg-danger",
+  MEDIUM: "bg-warning",
+  LOW: "bg-success",
+};
+
 export function PriorityBadge({ priority }: { priority: Priority }) {
   return (
     <span
-      className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${styles[priority]}`}
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${styles[priority]}`}
     >
+      <span className={`h-1.5 w-1.5 rounded-full ${dots[priority]}`} aria-hidden />
       {priority}
     </span>
   );

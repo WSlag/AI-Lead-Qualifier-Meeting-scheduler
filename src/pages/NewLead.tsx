@@ -113,7 +113,7 @@ export function NewLead() {
   return (
     <div className="animate-fade-in mx-auto max-w-xl space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-ink">New Lead</h1>
+        <h1 className="text-xl font-semibold text-ink">Customer Form</h1>
         <p className="mt-0.5 text-sm text-muted">
           Capture a lead and qualify it with AI.
         </p>

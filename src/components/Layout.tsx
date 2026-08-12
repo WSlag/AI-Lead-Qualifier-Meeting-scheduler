@@ -40,23 +40,33 @@ function Sidebar() {
             to={item.to}
             end={item.end}
             className={({ isActive }) =>
-              `flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+              `relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
                 isActive
                   ? "bg-primary-soft text-primary"
                   : "text-muted hover:bg-canvas hover:text-ink"
               }`
             }
           >
-            <item.icon className="h-4 w-4" aria-hidden />
-            {item.label}
+            {({ isActive }) => (
+              <>
+                {isActive && (
+                  <span
+                    className="absolute left-0 top-1/2 h-4 w-1 -translate-y-1/2 rounded-full bg-primary"
+                    aria-hidden
+                  />
+                )}
+                <item.icon className="h-4 w-4" aria-hidden />
+                {item.label}
+              </>
+            )}
           </NavLink>
         ))}
         <NavLink
           to="/new"
-          className="mt-4 flex items-center gap-2.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90"
+          className="mt-4 flex items-center gap-2.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white transition-all hover:bg-primary/90 hover:scale-[1.02] active:scale-[0.98]"
         >
           <Plus className="h-4 w-4" aria-hidden />
-          New Lead
+          Customer Form
         </NavLink>
       </nav>
       <div className="border-t border-line px-5 py-4 text-xs text-muted">

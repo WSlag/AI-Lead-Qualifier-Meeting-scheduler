@@ -16,6 +16,28 @@ function isSameDay(a: Date, b: Date): boolean {
   );
 }
 
+function startOfWeek(): Date {
+  const d = new Date();
+  const day = (d.getDay() + 6) % 7;
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - day);
+  return d;
+}
+
+function weeklyTrend(leads: Lead[]): string | undefined {
+  const weekStart = startOfWeek();
+  const prevStart = new Date(weekStart);
+  prevStart.setDate(weekStart.getDate() - 7);
+  const now = leads.filter((l) => new Date(l.createdAt) >= weekStart).length;
+  const prev = leads.filter(
+    (l) => new Date(l.createdAt) >= prevStart && new Date(l.createdAt) < weekStart
+  ).length;
+  if (prev === 0) return now > 0 ? "+100%" : undefined;
+  const pct = Math.round(((now - prev) / prev) * 100);
+  if (pct === 0) return undefined;
+  return `${pct > 0 ? "+" : "-"}${Math.abs(pct)}%`;
+}
+
 export function Dashboard() {
   const [leads, setLeads] = useState<Lead[] | null>(null);
   const [error, setError] = useState<Error | null>(null);
@@ -56,10 +78,32 @@ export function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard label="Total Leads" value={total} icon={Users} />
-        <MetricCard label="High Priority" value={highPriority} icon={Flame} />
-        <MetricCard label="Average Score" value={avgScore} icon={Gauge} />
-        <MetricCard label="New Today" value={newToday} icon={CalendarClock} />
+        <MetricCard
+          label="Total Leads"
+          value={total}
+          icon={Users}
+          trend={weeklyTrend(computed)}
+          hint="Signed up through the capture form."
+        />
+        <MetricCard
+          label="High Priority"
+          value={highPriority}
+          icon={Flame}
+          trend={weeklyTrend(computed.filter((l) => l.priority === "HIGH"))}
+          hint="DeepSeek flagged these as sales-ready."
+        />
+        <MetricCard
+          label="Average Score"
+          value={avgScore}
+          icon={Gauge}
+          hint="Mean DeepSeek qualification score (0-100)."
+        />
+        <MetricCard
+          label="New Today"
+          value={newToday}
+          icon={CalendarClock}
+          hint="Leads captured since midnight."
+        />
       </div>
 
       <section>

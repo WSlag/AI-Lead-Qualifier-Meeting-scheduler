@@ -8,6 +8,8 @@ interface ScoreDisplayProps {
 export function ScoreDisplay({ score, size = "sm" }: ScoreDisplayProps) {
   const clamped = Math.min(100, Math.max(0, score));
   const pct = `${clamped}%`;
+  const barColor =
+    clamped <= 40 ? "bg-danger" : clamped <= 70 ? "bg-warning" : "bg-success";
   return (
     <div className={size === "lg" ? "w-full max-w-md" : "w-full max-w-[160px]"}>
       <div className="flex items-center justify-between">
@@ -20,7 +22,7 @@ export function ScoreDisplay({ score, size = "sm" }: ScoreDisplayProps) {
         </span>
       </div>
       <div
-        className={`mt-1.5 rounded-full bg-canvas ${size === "lg" ? "h-2.5" : "h-2"}`}
+        className={`mt-1.5 rounded-full bg-line ${size === "lg" ? "h-2.5" : "h-2"}`}
         role="progressbar"
         aria-valuenow={clamped}
         aria-valuemin={0}
@@ -28,7 +30,7 @@ export function ScoreDisplay({ score, size = "sm" }: ScoreDisplayProps) {
         aria-label="AI score"
       >
         <div
-          className="h-full rounded-full bg-primary transition-all"
+          className={`h-full rounded-full transition-all ${barColor}`}
           style={{ width: pct }}
         />
       </div>
