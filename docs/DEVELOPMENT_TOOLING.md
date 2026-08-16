@@ -52,6 +52,7 @@ npm test            # vitest run
 - `VITE_FIREBASE_*` (public web config)
 - `VITE_N8N_WEBHOOK_URL`
 - `VITE_N8N_SCHEDULE_WEBHOOK_URL`
+- `VITE_N8N_WEBHOOK_TOKEN` (must equal the n8n env var `WEBHOOK_SECRET`; sent as `token` to gate both webhooks)
 
 **Server-side only — n8n credentials/env and Apps Script properties:**
 - `DEEPSEEK_API_KEY`, `APPS_SCRIPT_URL`, `NOTIFY_EMAIL`, `DEFAULT_MEETING_START`

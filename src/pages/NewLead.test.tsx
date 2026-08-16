@@ -16,7 +16,7 @@ function renderPage() {
 describe("NewLead form validation", () => {
   it("shows validation errors for an empty form", async () => {
     renderPage();
-    await userEvent.click(screen.getByRole("button", { name: "Qualify Lead" }));
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(await screen.findByText("Name is required.")).toBeInTheDocument();
     expect(screen.getByText("Email is required.")).toBeInTheDocument();
     expect(screen.getByText("Message is required.")).toBeInTheDocument();
@@ -27,13 +27,13 @@ describe("NewLead form validation", () => {
     await userEvent.type(screen.getByLabelText("Name *"), "John Smith");
     await userEvent.type(screen.getByLabelText("Email *"), "not-an-email");
     await userEvent.type(screen.getByLabelText("Message *"), "We need automation.");
-    await userEvent.click(screen.getByRole("button", { name: "Qualify Lead" }));
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(await screen.findByText("Enter a valid email address.")).toBeInTheDocument();
   });
 
   it("clears a field error once corrected", async () => {
     renderPage();
-    await userEvent.click(screen.getByRole("button", { name: "Qualify Lead" }));
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(await screen.findByText("Name is required.")).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText("Name *"), "John Smith");
     expect(screen.queryByText("Name is required.")).not.toBeInTheDocument();

@@ -7,6 +7,11 @@ service cloud.firestore {
     // which bypasses these rules.
     // The browser may only patch the lead status fields ("Mark as Contacted").
     match /leads/{leadId} {
+      // WARNING: public read exposes ALL fields (name, email, company, message) to
+      // anyone who knows the project ID. Firestore rules cannot hide individual
+      // fields on a read. DEMO ONLY — for real leads, move PII to a private
+      // collection/subcollection readable only by the service account, or gate
+      // reads behind Firebase Auth / an auth-enabled BFF.
       allow read: if true;
       allow create: if false;
       allow delete: if false;

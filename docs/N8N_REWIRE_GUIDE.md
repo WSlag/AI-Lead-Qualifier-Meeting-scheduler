@@ -52,17 +52,19 @@ n8n wiring facts you need up front:
 ### Node 1 — `Lead Webhook`  (Webhook node)
 
 - `HTTP Method`: **POST**
-- `Path`: **`lead`** → full URL `https://n8n.getgoph.com/webhook/lead`
+- `Path`: **`lead`** → full URL `https://<N8N_HOST>/webhook/lead`
 - `Response Mode`: **Respond to Webhook** ("onReceived") — answer immediately so the browser form doesn't hang; the rest of the pipeline runs in the background.
 - `Options`: none.
 
 **What it does:** receives the lead JSON from the React form:
 
 ```json
-{ "name": "John Smith", "email": "john@example.com", "company": "ABC Corp", "message": "We need sales automation." }
+{ "name": "John Smith", "email": "john@example.com", "company": "ABC Corp", "message": "We need sales automation.", "token": "<matches n8n env WEBHOOK_SECRET>" }
 ```
 
-**Wire here:** from this node's output → next node **`Validate Lead`**.
+> **Auth gate (must be wired first):** the webhook output does **not** go straight to validation. It goes to **`Check Webhook Secret`** (Code node) → **`Authorized?`** (IF node). The Code node compares the request's `token` field (webhook data is nested under `body`) against the n8n environment variable `WEBHOOK_SECRET` and returns `{ authorized: true|false }`. The IF node routes **FALSE** (bottom port) → **`Respond (Unauthorized)`** (HTTP **401**) and **TRUE** (top port) → **`Validate Lead`**. Requests without the correct token never reach DeepSeek, Firestore, Calendar, or Gmail.
+
+**Wire here:** from this node's output → **`Check Webhook Secret`** → `Authorized?` → (TRUE) **`Validate Lead`**, (FALSE) **`Respond (Unauthorized)`**.
 
 ---
 
@@ -286,7 +288,7 @@ Runs **only** on the TRUE output of `Calendar Created?` — a failed Calendar at
 
 ### Node 12 — `Lead Webhook (Schedule)`  (Webhook node)
 
-- `HTTP Method`: **POST** · `Path`: **`schedule`** → `https://n8n.getgoph.com/webhook/schedule`
+- `HTTP Method`: **POST** · `Path`: **`schedule`** → `https://<N8N_HOST>/webhook/schedule`
 - `Response Mode`: Respond to Webhook.
 
 **What it does:** lets the mini-CRM "Schedule later" action fire with a user-chosen start time. Payload example:
@@ -294,10 +296,13 @@ Runs **only** on the TRUE output of `Calendar Created?` — a failed Calendar at
 ```json
 { "leadId": "aBc123...", "name": "...", "email": "...", "company": "...",
   "score": 88, "priority": "HIGH", "intent": "...", "summary": "...", "recommendedAction": "...",
-  "source": "WEB_FORM", "meetingStart": "2026-08-12T10:00:00.000Z", "meetingDurationMinutes": 30 }
+  "source": "WEB_FORM", "meetingStart": "2026-08-12T10:00:00.000Z", "meetingDurationMinutes": 30,
+  "token": "<matches n8n env WEBHOOK_SECRET>" }
 ```
 
-**Wire here:** output → **`Get Lead (Manual)`**.
+> **Auth gate:** same guard as the lead webhook — output goes to **`Check Webhook Secret (Schedule)`** → **`Authorized? (Schedule)`**. FALSE → **`Respond (Unauthorized) (Schedule)`** (HTTP **401**); TRUE → **`Get Lead (Manual)`**.
+
+**Wire here:** output → **`Check Webhook Secret (Schedule)`** → `Authorized? (Schedule)` → (TRUE) **`Get Lead (Manual)`**, (FALSE) **`Respond (Unauthorized) (Schedule)`**.
 
 ### Node 12b — `Get Lead (Manual)`  (Firebase → Firestore node)
 
@@ -384,7 +389,10 @@ Same gate as Node 10b, for the manual branch — left value `={{ $('Apps Script 
 
 | From node | Output port | To node |
 | --- | --- | --- |
-| Lead Webhook | main | Validate Lead |
+| Lead Webhook | main | Check Webhook Secret |
+| Check Webhook Secret | main | Authorized? |
+| Authorized? | **TRUE** (1st/top) | Validate Lead |
+| Authorized? | **FALSE** (2nd/bottom) | Respond (Unauthorized) |
 | Validate Lead | main | Valid Lead? |
 | Valid Lead? | **TRUE** (1st/top) | DeepSeek Qualification |
 | Valid Lead? | **FALSE** (2nd/bottom) | Respond (Validation Error) |
@@ -399,7 +407,10 @@ Same gate as Node 10b, for the manual branch — left value `={{ $('Apps Script 
 | Calendar Created? | **TRUE** (1st/top) | Gmail Notification |
 | Calendar Created? | **FALSE** (2nd/bottom) | Respond (Lead High - Scheduling Failed) |
 | Gmail Notification | main | Respond (Lead High) |
-| Lead Webhook (Schedule) | main | Get Lead (Manual) |
+| Lead Webhook (Schedule) | main | Check Webhook Secret (Schedule) |
+| Check Webhook Secret (Schedule) | main | Authorized? (Schedule) |
+| Authorized? (Schedule) | **TRUE** (1st/top) | Get Lead (Manual) |
+| Authorized? (Schedule) | **FALSE** (2nd/bottom) | Respond (Unauthorized) (Schedule) |
 | Get Lead (Manual) | main | Already Scheduled? |
 | Already Scheduled? | **TRUE** (1st/top) | Respond (Manual Schedule - Already Scheduled) |
 | Already Scheduled? | **FALSE** (2nd/bottom) | Merge Webhook + Lead |
@@ -413,6 +424,7 @@ Same gate as Node 10b, for the manual branch — left value `={{ $('Apps Script 
 
 | Env var | Used by | Meaning |
 | --- | --- | --- |
+| `WEBHOOK_SECRET` | Auth gates (Nodes 1b, 12b) + Apps Script nodes | Shared secret that gates both n8n webhooks (as `token` in the request body) and the Apps Script Web App (as `secret` in the body). Must equal the frontend `VITE_N8N_WEBHOOK_TOKEN`. |
 | `APPS_SCRIPT_URL` | Nodes 7, 9, 13 | Deployed Apps Script Web App URL |
 | `NOTIFY_EMAIL` | Node 11 | Recipient of high-priority lead alert |
 | `DEFAULT_MEETING_START` | Node 9 | Default meeting time (ISO, e.g. next business day 10:00) |
@@ -433,8 +445,9 @@ Same gate as Node 10b, for the manual branch — left value `={{ $('Apps Script 
 1. Re-wire the IF nodes — `Score >= 80?`: TRUE → Schedule, FALSE → Log; `Valid Lead?`: TRUE → DeepSeek, FALSE → Respond (Validation Error); `Already Scheduled?`: TRUE → Respond (already scheduled), FALSE → Merge Webhook + Lead; `Calendar Created?` (+ Manual): TRUE → Gmail/Respond, FALSE → failure Respond.
 2. Re-wire every missing connection per the table (the live copy was missing 6 wires).
 3. Verify the expression fixes landed (Node 4 `lead`, Node 9 `leadId`, Node 13 `leadId`, Node 2 valid-flag, and the new `Get Lead (Manual)` / `Already Scheduled?` / `Merge Webhook + Lead` nodes). Optional — you can also just re-import `n8n/workflow.lead-qualifier.json` and attach credentials, since the repo file already contains all fixes.
-4. Test end-to-end: **Execute Workflow** with a test payload where `name/email/message` are filled. Confirm the Firestore doc appears with real `name`/`email` and a correct `ai.score`.
-5. Test invalid payload (missing `email`) — expect the `Valid Lead?` FALSE branch to reply HTTP **400** `{ ok: false, message, errors }` and **no** DeepSeek call.
-6. Fire a low-score message → `Log Activity` (meetingStatus `NOT_REQUIRED`); a high-score message → Calendar event + Gmail + `meetingStatus: SCHEDULED`. Simulate a Calendar failure → `Calendar Created?` FALSE branch responds honestly "could not be scheduled" with **no Gmail**.
-7. Test the manual `/schedule` webhook twice for the same lead — the second call must short-circuit on `Already Scheduled?` and return the existing `calendarEventUrl` without creating a second event.
-8. Only after tests pass: flick the workflow **Active**.
+4. Test the auth gate first: POST to either webhook **without** a correct `token` — expect HTTP **401** `{ ok: false, message: "Unauthorized." }` and **no** downstream nodes running.
+5. Test end-to-end: **Execute Workflow** with a test payload where `name/email/message` are filled **and** `token` matches `WEBHOOK_SECRET`. Confirm the Firestore doc appears with real `name`/`email` and a correct `ai.score`.
+6. Test invalid payload (missing `email`) — expect the `Valid Lead?` FALSE branch to reply HTTP **400** `{ ok: false, message, errors }` and **no** DeepSeek call.
+7. Fire a low-score message → `Log Activity` (meetingStatus `NOT_REQUIRED`); a high-score message → Calendar event + Gmail + `meetingStatus: SCHEDULED`. Simulate a Calendar failure → `Calendar Created?` FALSE branch responds honestly "could not be scheduled" with **no Gmail**.
+8. Test the manual `/schedule` webhook twice for the same lead — the second call must short-circuit on `Already Scheduled?` and return the existing `calendarEventUrl` without creating a second event.
+9. Only after tests pass: flick the workflow **Active**.

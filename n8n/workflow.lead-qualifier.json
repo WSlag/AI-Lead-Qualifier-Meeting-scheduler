@@ -20,6 +20,69 @@
       "onError": "continueRegularOutput"
     },
     {
+      "id": "check-secret-lead-1",
+      "name": "Check Webhook Secret",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1840,
+        288
+      ],
+      "parameters": {
+        "jsCode": "const data = $input.item.json.body ?? $input.item.json;\nconst expected = $env.WEBHOOK_SECRET || '';\nconst supplied = String((data && data.token) || '').trim();\nreturn { json: { authorized: supplied.length > 0 && supplied === expected } };"
+      }
+    },
+    {
+      "id": "authorized-if-lead-1",
+      "name": "Authorized?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1600,
+        288
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "id": "condition-authorized-lead"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "respond-unauthorized-lead-1",
+      "name": "Respond (Unauthorized)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -1360,
+        96
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"ok\": false,\n  \"message\": \"Unauthorized.\"\n}",
+        "options": {
+          "responseCode": 401
+        }
+      }
+    },
+    {
       "id": "b374e302-9ec6-442b-a992-6ce213f68b04",
       "name": "Validate Lead",
       "type": "n8n-nodes-base.code",
@@ -372,6 +435,69 @@
       "onError": "continueRegularOutput"
     },
     {
+      "id": "check-secret-sched-1",
+      "name": "Check Webhook Secret (Schedule)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1840,
+        912
+      ],
+      "parameters": {
+        "jsCode": "const data = $input.item.json.body ?? $input.item.json;\nconst expected = $env.WEBHOOK_SECRET || '';\nconst supplied = String((data && data.token) || '').trim();\nreturn { json: { authorized: supplied.length > 0 && supplied === expected } };"
+      }
+    },
+    {
+      "id": "authorized-if-sched-1",
+      "name": "Authorized? (Schedule)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1600,
+        912
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "id": "condition-authorized-sched"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "respond-unauthorized-sched-1",
+      "name": "Respond (Unauthorized) (Schedule)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -1360,
+        720
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"ok\": false,\n  \"message\": \"Unauthorized.\"\n}",
+        "options": {
+          "responseCode": 401
+        }
+      }
+    },
+    {
       "id": "prepare-update-sched-1",
       "name": "Prepare Scheduled Update",
       "type": "n8n-nodes-base.code",
@@ -644,7 +770,36 @@
       "main": [
         [
           {
+            "node": "Check Webhook Secret",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Webhook Secret": {
+      "main": [
+        [
+          {
+            "node": "Authorized?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authorized?": {
+      "main": [
+        [
+          {
             "node": "Validate Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond (Unauthorized)",
             "type": "main",
             "index": 0
           }
@@ -830,7 +985,36 @@
       "main": [
         [
           {
+            "node": "Check Webhook Secret (Schedule)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Webhook Secret (Schedule)": {
+      "main": [
+        [
+          {
+            "node": "Authorized? (Schedule)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authorized? (Schedule)": {
+      "main": [
+        [
+          {
             "node": "Get Lead (Manual)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond (Unauthorized) (Schedule)",
             "type": "main",
             "index": 0
           }

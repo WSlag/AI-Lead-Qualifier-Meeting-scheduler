@@ -26,6 +26,7 @@ VITE_FIREBASE_MESSAGING_SENDER_ID
 VITE_FIREBASE_APP_ID
 VITE_N8N_WEBHOOK_URL
 VITE_N8N_SCHEDULE_WEBHOOK_URL
+VITE_N8N_WEBHOOK_TOKEN  # same value as the n8n env var WEBHOOK_SECRET
 ```
 
 ## Firebase
@@ -47,10 +48,11 @@ The Firebase web config used by the app is populated in `.env` (public values on
    - **Gmail OAuth2** (Google Cloud OAuth client) — see `docs/GOOGLE_WORKSPACE.md`
     - **Google Cloud Firestore credential** (Service Account — `googleApi` type) for the Firestore nodes
 3. Set environment values (or edit node fields):
+   - `WEBHOOK_SECRET` — shared secret gating both n8n webhooks (as `token` in the request body) and the Apps Script Web App (as `secret`). Must equal Vercel's `VITE_N8N_WEBHOOK_TOKEN`.
    - `APPS_SCRIPT_URL` — the `/exec` Web App URL
    - `NOTIFY_EMAIL` — Gmail recipient
    - `DEFAULT_MEETING_START` — default booking time (e.g. next business day 10:00)
-4. Activate the webhook. The lead webhook URL is `https://<host>/webhook/lead`, and the optional schedule webhook is `https://<host>/webhook/schedule`. Put these in Vercel as `VITE_N8N_WEBHOOK_URL` and `VITE_N8N_SCHEDULE_WEBHOOK_URL`.
+4. Activate the webhook. The lead webhook URL is `https://<host>/webhook/lead`, and the optional schedule webhook is `https://<host>/webhook/schedule`. Put these in Vercel as `VITE_N8N_WEBHOOK_URL` and `VITE_N8N_SCHEDULE_WEBHOOK_URL`, and set `VITE_N8N_WEBHOOK_TOKEN` to the same value as the n8n `WEBHOOK_SECRET`. Do not publish your real host URL in public docs.
 
 ### n8n hosting
 

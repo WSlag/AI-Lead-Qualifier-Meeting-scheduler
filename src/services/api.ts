@@ -2,6 +2,7 @@ import type { LeadFormPayload } from "../types/lead";
 
 const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL;
 const N8N_SCHEDULE_WEBHOOK_URL = import.meta.env.VITE_N8N_SCHEDULE_WEBHOOK_URL;
+const N8N_WEBHOOK_TOKEN = import.meta.env.VITE_N8N_WEBHOOK_TOKEN;
 
 export function isN8nConfigured(): boolean {
   return Boolean(N8N_WEBHOOK_URL);
@@ -22,7 +23,7 @@ export async function submitLead(payload: LeadFormPayload): Promise<SubmissionRe
   const res = await fetch(N8N_WEBHOOK_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, token: N8N_WEBHOOK_TOKEN }),
   });
   if (!res.ok) {
     throw new Error(`The workflow rejected the request (${res.status}).`);
@@ -60,7 +61,7 @@ export async function scheduleDiscoveryCall(
   const res = await fetch(N8N_SCHEDULE_WEBHOOK_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, token: N8N_WEBHOOK_TOKEN }),
   });
   if (!res.ok) {
     throw new Error(`The scheduling workflow rejected the request (${res.status}).`);

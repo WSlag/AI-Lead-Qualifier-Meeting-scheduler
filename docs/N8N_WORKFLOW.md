@@ -19,7 +19,11 @@ The export file lives at `n8n/workflow.lead-qualifier.json`. Import it in n8n vi
 ```
 Webhook (POST /lead)
   ↓
-Validate Lead (Code — flags valid/invalid, never throws)
+Check Webhook Secret (Code — token vs WEBHOOK_SECRET env, never throws)
+  ↓
+Authorized? (IF)
+  ├── NO  → Respond (Unauthorized) → 401 {ok:false, message:"Unauthorized."}
+  └── YES → Validate Lead (Code — flags valid/invalid, never throws)
   ↓
 Valid Lead? (IF)
   ├── NO  → Respond (Validation Error) → 400 {message, errors}
@@ -56,7 +60,11 @@ Valid Lead? (IF)
 ```
 Webhook (POST /schedule)
   ↓
-Get Lead (Manual) (Firestore get by leadId)
+Check Webhook Secret (Schedule) (Code — token vs WEBHOOK_SECRET env)
+  ↓
+Authorized? (Schedule) (IF)
+  ├── NO  → Respond (Unauthorized) (Schedule) → 401 {ok:false, message:"Unauthorized."}
+  └── YES → Get Lead (Manual) (Firestore get by leadId)
   ↓
 Already Scheduled? (IF — calendarEventCreated == true?)
   ├── YES → Respond (Manual Schedule - Already Scheduled) {leadId, message, calendarEventUrl}
@@ -88,9 +96,21 @@ Expected payload:
   "name": "John Smith",
   "email": "john@example.com",
   "company": "ABC Corp",
-  "message": "We need sales automation."
+  "message": "We need sales automation.",
+  "token": "<matches n8n env WEBHOOK_SECRET>"
 }
 ```
+
+### 1a. Auth Gate (both webhooks)
+
+Every webhook output is gated before any work runs. A **`Check Webhook Secret`** Code node reads the request's `token` (webhook data is nested under `body`, so it uses `body.token`) and compares it to the n8n environment variable `WEBHOOK_SECRET` — returning `{ authorized: true|false }` (it does **not** throw). An **`Authorized?`** IF node then routes:
+
+- **FALSE** → `Respond (Unauthorized)` → HTTP **401** `{ "ok": false, "message": "Unauthorized." }`. Nothing downstream runs — no DeepSeek cost, no Firestore/Calendar/Gmail side effects.
+- **TRUE** → the normal branch (Validate Lead for `/lead`, Get Lead for `/schedule`).
+
+The frontend sends this token from `VITE_N8N_WEBHOOK_TOKEN` (must equal `WEBHOOK_SECRET`). Because the token ships in the browser bundle it is a deterrent against casual/bot abuse of a public webhook URL, **not** real authentication — production still needs an auth-enabled BFF or real auth (see `docs/SECURITY.md`).
+
+The workflow requires `WEBHOOK_SECRET` to be set in the n8n environment (`N8N_BLOCK_ENV_ACCESS_IN_NODE=false` must be set so `$env.*` expressions resolve). If it is unset, every request is rejected with 401 (fail closed).
 
 ## 2. Validation (Code node)
 
@@ -236,6 +256,7 @@ Both webhooks use `responseMode: "responseNode"`. Each execution branch ends wit
 
 | Branch | Response |
 | --- | --- |
+| Wrong/missing webhook `token` | `401` `{ "ok": false, "message": "Unauthorized." }` |
 | Invalid payload | `400` `{ "ok": false, "message": "Invalid lead data.", "errors": {...} }` |
 | High priority (Calendar OK) | `{ "leadId": "...", "message": "Lead qualified and meeting scheduled." }` |
 | High priority (Calendar failed) | `{ "leadId": "...", "message": "Lead qualified but the meeting could not be scheduled." }` |
@@ -262,6 +283,7 @@ No distributed locking — a simple check is sufficient for the MVP.
 
 | Failure | Behavior |
 | --- | --- |
+| Wrong/missing webhook `token` | Client error (401); nothing downstream runs |
 | Invalid webhook payload | Client error (400); DeepSeek is not called |
 | DeepSeek failure | Workflow execution fails visibly; no Firestore write from malformed output |
 | Firestore failure | Downstream processing stops |

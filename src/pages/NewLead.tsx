@@ -217,7 +217,7 @@ export function NewLead() {
               Qualifying…
             </span>
           ) : (
-            "Qualify Lead"
+            "Send"
           )}
         </button>
 

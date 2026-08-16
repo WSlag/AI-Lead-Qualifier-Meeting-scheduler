@@ -21,9 +21,12 @@ VITE_FIREBASE_MESSAGING_SENDER_ID
 VITE_FIREBASE_APP_ID
 VITE_N8N_WEBHOOK_URL
 VITE_N8N_SCHEDULE_WEBHOOK_URL
+VITE_N8N_WEBHOOK_TOKEN
 ```
 
 Firebase web config values are designed to be public in browser apps — they are **not** secrets. Latent risks are handled by security rules (clients may only read, plus patch the lead `status` field) and the fact that all other writes happen server-side through n8n.
+
+`VITE_N8N_WEBHOOK_TOKEN` must equal the n8n environment variable `WEBHOOK_SECRET`. It gates the two n8n webhooks (the workflow rejects requests whose `token` does not match, HTTP 401). Because it ships in the browser bundle, treat it as a **deterrent against casual/bot abuse, not authentication** — production should gate webhooks behind an auth-enabled BFF or real auth.
 
 DeepSeek, Apps Script secret, Gmail, and service-account credentials are **server-only**:
 
@@ -52,13 +55,13 @@ match /{document=**} {
 
 - The browser can only read, plus patch a small allowlist of fields (`status`, `updatedAt`) for the "Mark as Contacted" action. Create, delete, and every other field write are n8n-only.
 - n8n uses an Admin SDK or authenticated service account, which bypasses these rules to write.
-- Public read is acceptable for this portfolio demo. **Production** must gate read behind authentication or an auth-enabled BFF.
+- **Warning:** `allow read: if true` exposes **all** lead documents — including PII (`name`, `email`, `company`, `message`) — to anyone who knows the project ID. The project ID (`ai-lead-qualifier-demo`) appears in the public repo (n8n workflow, docs), and the deployed bundle exposes the Firebase web config, so the `leads` collection is effectively public-readable via the Firestore REST API. Firestore rules cannot restrict which fields a read returns. Public read is acceptable for this portfolio demo **only if all data is fake/demo**. Before real leads, either (a) move PII into a private collection/subcollection (readable only by the service account) and keep a non-PII projection public for the dashboard, or (b) gate all reads behind Firebase Auth / an auth-enabled BFF.
 
 ## n8n
 
 - API credentials are stored in n8n's credential store, not inline in workflow files.
 - The Apps Script Web App endpoint is protected by a shared secret sent in the JSON **body** (`"secret"`, or a `?secret=` query parameter) and validated in Apps Script before any Calendar/Sheets action. Apps Script web apps cannot read HTTP request headers, so the `Authorization: Bearer` header alone would never authenticate.
-- Webhook endpoints are discoverable; for production, add a shared secret or IP allowlist.
+- Both n8n webhooks (`/lead`, `/schedule`) are gated by a **`Check Webhook Secret`** Code node that compares the request's `token` field to the n8n environment variable `WEBHOOK_SECRET` and returns HTTP **401** on mismatch, before any expensive or stateful node runs. The token is sent by the frontend from `VITE_N8N_WEBHOOK_TOKEN`. Note this is a deterrent, not authentication — the token is in the browser bundle. Do **not** publish your live n8n host/URLs in public docs; use `https://<host>/webhook/...` placeholders. For production, add real auth (BFF) and rate limiting.
 
 ## Google Apps Script
 
