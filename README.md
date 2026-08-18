@@ -1,84 +1,102 @@
-# Project Demo — AI Lead Qualifier & Meeting Booker
+<p align="center">
+  <img src="banner.png" width="100%" alt="AI Lead Qualifier — Qualify · Book · Close">
+</p>
 
-A lightweight AI-powered sales automation demo: capture leads, qualify them with **DeepSeek**, store results in Firebase, schedule discovery calls through Google Calendar (via Apps Script), log activity to Google Sheets, and notify the team by Gmail.
+<div align="center">
 
-> **LLM:** DeepSeek (`deepseek-chat`, JSON mode). This project intentionally does **not** use Gemini — every doc, code comment, and env name says DeepSeek.
+# ⚡ AI Lead Qualifier & Meeting Booker
 
-## Flow
+**A lightweight AI-powered sales automation: capture leads, qualify them with
+DeepSeek, and book discovery calls automatically.**
 
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-6-646CFF?style=flat-square&logo=vite&logoColor=white)
+![DeepSeek](https://img.shields.io/badge/LLM-DeepSeek-4D6BFE?style=flat-square)
+![n8n](https://img.shields.io/badge/orchestration-n8n-FF6D00?style=flat-square&logo=n8n&logoColor=white)
+![Firebase](https://img.shields.io/badge/Firebase-Firestore-FFCA28?style=flat-square&logo=firebase&logoColor=black)
+
+</div>
+
+---
+
+## 🔄 The Pipeline
+
+```mermaid
+flowchart LR
+    A[Lead Form] --> B[n8n] --> C[DeepSeek JSON mode]
+    C --> D[(Firestore)]
+    D --> E[Mini CRM Dashboard]
+    D -->|score >= 80| F[Google Calendar<br/>Apps Script]
+    D -->|score >= 80| G[Google Sheets<br/>activity log]
+    D -->|score >= 80| H[Gmail<br/>notify team]
 ```
-Lead Form → n8n → DeepSeek → Firestore → Mini CRM Dashboard
-                                         └─ score >= 80
-                                            ├─ Google Calendar (Apps Script)
-                                            ├─ Google Sheets activity log
-                                            └─ Gmail notification
-```
 
-## Core Features
+High-priority leads get a **discovery call booked on the calendar**, an
+**activity-log row**, and a **team notification** — all independent so one
+service failing never breaks the others.
 
-- Lead capture form with validation
-- n8n webhook integration
-- DeepSeek AI lead qualification (structured JSON)
-- Firestore persistence (source of truth)
-- Mini-CRM dashboard with score/priority/status
-- Google Calendar Discovery Call for high-priority leads
-- Google Sheets operational activity log
-- Gmail notifications for high-priority leads
-- Duplicate protection (no double events/rows)
-- Independent error handling (Calendar/Sheets/Gmail)
+---
 
-## Technology
+## ✨ Core Features
 
-- React · TypeScript · Vite · Tailwind CSS · React Router · lucide-react
-- n8n (HTTP Request node → DeepSeek)
-- **DeepSeek API** — lead scoring/classification
-- Firebase Firestore + security rules
-- Google Apps Script · Google Calendar · Google Sheets · Gmail
-- Vercel (frontend) · GitHub · Vitest
+- 📝 Lead capture form with validation
+- 🔗 n8n webhook integration
+- 🧠 DeepSeek lead qualification (structured JSON)
+- 🗄 Firestore persistence — the source of truth
+- 📊 Mini-CRM dashboard with score / priority / status
+- 📅 Google Calendar Discovery Call for high-priority leads
+- 📈 Google Sheets operational activity log
+- ✉️ Gmail notifications for high-priority leads
+- 🛡 Duplicate protection (no double events / rows)
+- 🔧 Independent error handling (Calendar / Sheets / Gmail)
 
-## Project Structure
+> **LLM:** DeepSeek (`deepseek-chat`, JSON mode). This project intentionally
+> does **not** use Gemini — every doc, code comment, and env name says DeepSeek.
+
+---
+
+## 🛠 Technology
+
+| Layer | Technology |
+| --- | --- |
+| **Frontend** | React · TypeScript · Vite · Tailwind · React Router · lucide-react |
+| **Orchestration** | n8n (HTTP Request node → DeepSeek) |
+| **AI** | DeepSeek API — lead scoring / classification |
+| **Data** | Firebase Firestore + security rules |
+| **Workspace** | Google Apps Script · Calendar · Sheets · Gmail |
+| **Hosting** | Vercel (frontend) · GitHub |
+| **Quality** | Vitest |
+
+---
+
+## 📁 Project Structure
 
 ```text
 .
-├── AGENTS.md
-├── README.md
-├── .env.example
-├── firebase.json / firestore.rules / firestore.indexes.json
-├── docs/
-│   ├── PRD.md              Product requirements
-│   ├── ARCHITECTURE.md     System design
-│   ├── TECH_STACK.md       Technologies
-│   ├── DATA_MODEL.md       Firestore schema
-│   ├── N8N_WORKFLOW.md     Workflow spec
-│   ├── AI_SPEC.md          DeepSeek spec
-│   ├── SECURITY.md         Security posture
-│   ├── TESTING.md          Test plan
-│   ├── DEPLOYMENT.md       Deployment steps
-│   ├── GOOGLE_WORKSPACE.md Apps Script / Calendar / Sheets / Gmail setup
-│   ├── PORTFOLIO_DEMO.md   Demo + interview script
-│   └── DEVELOPMENT_TOOLING.md  Skills & MCPs used during development
-├── google-apps-script/
-│   ├── Code.js             Apps Script Web App
-│   └── appsscript.json
-├── n8n/
-│   └── workflow.lead-qualifier.json   n8n workflow import
 ├── src/
-│   ├── components/         Layout, MetricCard, LeadTable, badges, ScoreDisplay, Loading/Empty states
-│   ├── pages/              Dashboard, Leads, LeadDetail, NewLead
-│   ├── services/           firebase.ts, leads.ts, api.ts
-│   ├── types/lead.ts
-│   └── App.tsx
-└── public/
+│   ├── components/     Layout, MetricCard, LeadTable, badges, states
+│   ├── pages/          Dashboard, Leads, LeadDetail, NewLead
+│   ├── services/       firebase.ts, leads.ts, api.ts
+│   └── types/lead.ts
+├── google-apps-script/ Apps Script Web App + manifest
+├── n8n/                workflow.lead-qualifier.json (import)
+├── docs/               PRD, architecture, data model, deployment, demo script
+├── firebase.json / firestore.rules / firestore.indexes.json
+└── .env.example
 ```
 
-## Getting Started (Local)
+---
+
+## 🚀 Getting Started (Local)
 
 ```bash
 npm install
 npm run dev          # http://localhost:5173
 ```
 
-Copy `.env.example` → `.env` and add your Firebase web config and n8n webhook URLs (or use the provided `.env` for the `ai-lead-qualifier-demo` project).
+Copy `.env.example` → `.env` and add your Firebase web config and n8n webhook
+URLs.
 
 ```bash
 npm run typecheck
@@ -86,22 +104,35 @@ npm run build
 npm test
 ```
 
-## Setup Steps
+### Setup steps
 
-1. **Firebase** — project `ai-lead-qualifier-demo`, Firestore created (native, `nam5`), rules deployed (`firebase deploy --only firestore:rules -P ai-lead-qualifier-demo`). Web app display name: **Project Demo**.
-2. **n8n** — import `n8n/workflow.lead-qualifier.json`, add DeepSeek + Apps Script + Gmail + Firestore credentials, set `APPS_SCRIPT_URL`, `NOTIFY_EMAIL`, `DEFAULT_MEETING_START`.
-3. **Google Workspace** — follow `docs/GOOGLE_WORKSPACE.md` (Spreadsheet, Apps Script, properties, Web App deploy, Gmail OAuth).
-4. **Vercel** — deploy with Vite settings, add `VITE_*` variables.
+1. **Firebase** — create `ai-lead-qualifier-demo`, deploy rules:
+   `firebase deploy --only firestore:rules -P ai-lead-qualifier-demo`
+2. **n8n** — import `n8n/workflow.lead-qualifier.json`, add DeepSeek / Apps
+   Script / Gmail / Firestore credentials, set `APPS_SCRIPT_URL`,
+   `NOTIFY_EMAIL`, `DEFAULT_MEETING_START`
+3. **Google Workspace** — follow `docs/GOOGLE_WORKSPACE.md`
+4. **Vercel** — deploy with Vite settings, add `VITE_*` variables
 
-See `docs/DEPLOYMENT.md` for the full walkthrough.
+Full walkthrough: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-## Repository Rules
+---
 
-- The AI integration is **DeepSeek**. Searching for `gemini` (case-insensitive) should return nothing; if it ever does, fix the naming.
-- Never commit secrets: DeepSeek key → n8n credentials; Apps Script secret → Script Properties; service account → n8n credential.
-- Google Sheets is an operational **activity log**, not a database. Firestore is the source of truth.
+## 📐 Repository Rules
+
+- The AI integration is **DeepSeek** — searching for `gemini`
+  (case-insensitive) should return nothing.
+- **Never commit secrets** — DeepSeek key → n8n credentials; Apps Script
+  secret → Script Properties; service account → n8n credential.
+- Google Sheets is an operational **activity log**, not a database. Firestore
+  is the source of truth.
 - The frontend must keep working if the Sheet or Gmail is down.
 
-## Portfolio
+---
 
-This project demonstrates: n8n, DeepSeek API, Firebase/Firestore, Google Workspace (Apps Script + Calendar + Sheets + Gmail), REST/webhooks, JSON, React, TypeScript, Tailwind, git, and AI-assisted development. See `docs/PORTFOLIO_DEMO.md` for the demo script.
+## 🧰 Portfolio
+
+Demonstrates: n8n, DeepSeek API, Firebase/Firestore, Google Workspace (Apps
+Script + Calendar + Sheets + Gmail), REST/webhooks, JSON, React, TypeScript,
+Tailwind, git, and AI-assisted development. See
+[`docs/PORTFOLIO_DEMO.md`](docs/PORTFOLIO_DEMO.md) for the demo script.
