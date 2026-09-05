@@ -1,14 +1,14 @@
-# Portfolio Demo Script
+# Project Demo 
 
 **Working title:** Project Demo (AI Lead Qualifier & Meeting Booker)
 
-> **LLM:** DeepSeek (no Gemini).
+> **LLM:** DeepSeek
 
-## 60-Second Explanation
+## 
 
 "I built a lightweight AI Lead Qualifier to show how I turn a business requirement into a working automation. A lead enters through a React form, n8n receives the webhook, **DeepSeek** analyzes and scores the lead, and the result is stored in Firebase Firestore. The dashboard is a small mini-CRM. High-priority leads automatically get a **Google Calendar discovery call** through Apps Script, the activity is logged to **Google Sheets**, and **Gmail** notifies the team. I kept it small on purpose so each integration is clear, testable, and easy to maintain."
 
-## 5-Minute Demo
+## 
 
 1. **Submit a lead** — `John Smith`, `ABC Corp`, "We need sales automation."
 2. **AI qualification** — show the DeepSeek result: `Score: 85`, `Priority: HIGH`, `Intent: AI Automation`.
@@ -30,7 +30,7 @@
 - Google Sheets is an activity log — **not** a second database.
 - Failures are handled independently (Calendar, Sheets, Gmail each logged separately).
 
-## Interview positioning
+## 
 
 Demonstrates practical ability in:
 
@@ -45,4 +45,4 @@ Demonstrates practical ability in:
 
 ## Why DeepSeek?
 
-The task was to demonstrate an LLM-powered automation; DeepSeek was chosen for its clean OpenAI-compatible API, cheap JSON-mode structure output, and easy n8n integration (HTTP Request node). The docs and code consistently say **DeepSeek** — there is no Gemini reference anywhere.
+The task was to demonstrate an LLM-powered automation; DeepSeek was chosen for its clean OpenAI-compatible API, cheap JSON-mode structure output, and easy n8n integration (HTTP Request node). 
